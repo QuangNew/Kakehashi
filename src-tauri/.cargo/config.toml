@@ -1,0 +1,21 @@
+# Build configuration for whisper-rs (requires LLVM + CMake)
+[env]
+LIBCLANG_PATH = "C:\\Program Files\\LLVM\\bin"
+CMAKE_GENERATOR = "Ninja"
+
+# Generic Cargo/CI builds keep a portable baseline. The pnpm desktop commands
+# detect the local CPU and explicitly enable AVX2/FMA/F16C/BMI2 when supported.
+# scripts/native-env.ps1 also invalidates the native build on profile changes.
+GGML_NATIVE = "OFF"
+GGML_SSE42 = "ON"
+GGML_AVX = "OFF"
+GGML_AVX2 = "OFF"
+GGML_AVX_VNNI = "OFF"
+GGML_BMI2 = "OFF"
+GGML_FMA = "OFF"
+GGML_F16C = "OFF"
+GGML_AVX512 = "OFF"
+
+# Statically link the MSVC C runtime so users don't need VC++ Redistributable
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

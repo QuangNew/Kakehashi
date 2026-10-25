@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs><linearGradient id="bridge" x1="40" y1="90" x2="216" y2="200" gradientUnits="userSpaceOnUse"><stop stop-color="#8cc8ff"/><stop offset="1" stop-color="#62e5c5"/></linearGradient></defs>
+  <rect width="256" height="256" rx="56" fill="#101b2e"/>
+  <path d="M38 158Q128 52 218 158M78 124V198M178 124V198" fill="none" stroke="url(#bridge)" stroke-width="16" stroke-linecap="round"/>
+  <path d="M40 163H216" fill="none" stroke="#e6f3ff" stroke-width="14" stroke-linecap="round"/>
+  <circle cx="40" cy="163" r="9" fill="#8cc8ff"/><circle cx="216" cy="163" r="9" fill="#62e5c5"/>
+</svg>

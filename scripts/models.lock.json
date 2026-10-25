@@ -1,0 +1,41 @@
+{
+  "runtime": {
+    "version": "b11669",
+    "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11669/llama-b11669-bin-win-vulkan-x64.zip",
+    "sha256": "2c07574e7bde71321cb785282b20cc821e951132149eeceeea32ddebdbf0598e"
+  },
+  "models": [
+    {
+      "role": "translation",
+      "repo": "tencent/Hy-MT2-1.8B-GGUF",
+      "revision": "a0c709d9fac510f2c807aa3af52872340dc37a4a",
+      "file": "Hy-MT2-1.8B-Q4_K_M.gguf",
+      "path": "translation/Hy-MT2-1.8B-Q4_K_M.gguf",
+      "sha256": "dc5f44fcf1fa496ee7ad725982c0c8c553a4de00259b53af84c4b89fb0c06699"
+    },
+    {
+      "role": "whisper",
+      "repo": "ggerganov/whisper.cpp",
+      "revision": "5359861c739e955e79d9a303bcbc70fb988958b1",
+      "file": "ggml-small.bin",
+      "path": "whisper_cpp/ggml-small.bin",
+      "sha256": "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b"
+    },
+    {
+      "role": "copilot",
+      "repo": "unsloth/Qwen3-1.7B-GGUF",
+      "revision": "d7f544eead698dbd1f15126ef60b45a1e1933222",
+      "file": "Qwen3-1.7B-Q4_K_M.gguf",
+      "path": "copilot/Qwen3-1.7B-Q4_K_M.gguf",
+      "sha256": "b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897"
+    },
+    {
+      "role": "embeddings",
+      "repo": "Qwen/Qwen3-Embedding-0.6B-GGUF",
+      "revision": "370f27d7550e0def9b39c1f16d3fbaa13aa67728",
+      "file": "Qwen3-Embedding-0.6B-Q8_0.gguf",
+      "path": "embeddings/Qwen3-Embedding-0.6B-Q8_0.gguf",
+      "sha256": "06507c7b42688469c4e7298b0a1e16deff06caf291cf0a5b278c308249c3e439"
+    }
+  ]
+}
