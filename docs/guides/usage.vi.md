@@ -1,7 +1,7 @@
 # Dùng Kakehashi
 
 1. Mở `out/windows/Kakehashi.exe`. Lần đầu có hướng dẫn; lần sau vào Settings để đổi cấu hình.
-2. **Audio & Devices:** chọn microphone của bạn và thiết bị đầu ra dùng để nghe khách. Preset mặc định: mic Việt, system Nhật, Whisper Small. Có preset đảo hai ngôn ngữ. Dùng tai nghe để hạn chế âm thanh của khách lọt vào mic.
+2. **Audio & Devices:** chọn microphone của bạn và thiết bị đầu ra dùng để nghe khách. Preset mặc định: mic Việt, system Nhật, Whisper Large v3 Turbo. Có preset đảo hai ngôn ngữ. Dùng tai nghe để hạn chế âm thanh của khách lọt vào mic.
 3. **Translation:** chọn Hy-MT2 local, Groq hoặc Google AI Studio. Với API, nhập key dành cho dịch, nạp danh sách model, chọn model và bấm **Áp dụng cấu hình AI dịch**. Các lựa chọn Microsoft/Google Cloud Translation, DeepL, OPUS-MT và dùng chung copilot vẫn được giữ. Bật dịch hai chiều và chọn cách hiển thị phụ đề.
 4. **LLM Providers:** chọn copilot, key và model riêng, rồi đặt làm provider đang dùng. Có thể dùng model trong folder, Ollama, LM Studio, Claude subscription hoặc API. Chỉ tùy chọn dịch **LLM dùng chung provider/model copilot** mới sử dụng cấu hình của copilot; Groq/Gemini dành cho dịch vẫn độc lập.
 5. Đính kèm tài liệu tại dashboard nếu cần. Context Strategy chọn tài liệu trực tiếp hoặc RAG local; đổi file embedding tại Local Models, rồi dựng lại chỉ mục.

@@ -506,7 +506,9 @@ export interface ModelDownloadProgress {
   downloaded_bytes: number;
   total_bytes: number;
   percent: number;
-  status: "downloading" | "verifying" | "extracting" | "complete" | "error" | "cancelled";
+  status: "queued" | "downloading" | "retrying" | "verifying" | "extracting" | "cancelling" | "complete" | "error" | "cancelled";
+  revision: number;
+  error?: string | null;
 }
 
 export interface STTProviderConfig {

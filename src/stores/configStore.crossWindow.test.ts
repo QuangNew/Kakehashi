@@ -38,7 +38,7 @@ describe("local bilingual audio across launches", () => {
   beforeEach(() => { saved.clear(); keyListeners.length = 0; invoke.mockClear(); });
   afterEach(() => { vi.restoreAllMocks(); });
 
-  it("keeps Whisper Small and each source language in both windows and after restart", async () => {
+  it("keeps Whisper Large v3 Turbo and each source language in both windows and after restart", async () => {
     const { applyPreset, BUILT_IN_PRESETS } = await import("../settings/presets");
     const preset = applyPreset(BUILT_IN_PRESETS[0], []);
     saved.set("meetingAudioConfig", preset);
@@ -54,7 +54,7 @@ describe("local bilingual audio across launches", () => {
     }
   });
 
-  it("restores missing Whisper model IDs with the multilingual Small default", async () => {
+  it("restores missing Whisper model IDs with the multilingual Large v3 Turbo default", async () => {
     saved.set("meetingAudioConfig", {
       you: { role: "You", device_id: "default", is_input_device: true, stt_provider: "whisper_cpp", language: "vi-VN" },
       them: { role: "Them", device_id: "default", is_input_device: false, stt_provider: "whisper_cpp", language: "ja-JP" },
@@ -62,8 +62,8 @@ describe("local bilingual audio across launches", () => {
     });
     const window = await openWindow();
     expect(window.getState().meetingAudioConfig).toMatchObject({
-      you: { stt_provider: "whisper_cpp", local_model_id: "small", language: "vi-VN" },
-      them: { stt_provider: "whisper_cpp", local_model_id: "small", language: "ja-JP" },
+      you: { stt_provider: "whisper_cpp", local_model_id: "large-v3-turbo", language: "vi-VN" },
+      them: { stt_provider: "whisper_cpp", local_model_id: "large-v3-turbo", language: "ja-JP" },
     });
   });
 });

@@ -13,6 +13,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useTheme } from "./hooks/useTheme";
 import { useGlobalShortcut } from "./hooks/useGlobalShortcut";
 import { useTranslation } from "./hooks/useTranslation";
+import { useModelDownload } from "./hooks/useModelDownload";
 import { useTraySync } from "./hooks/useTraySync";
 import { useTranslationStore } from "./stores/translationStore";
 import { CallLogPanel } from "./calllog";
@@ -25,6 +26,8 @@ import { showLauncherWindow, showOverlayWindow } from "./lib/windows";
 import { emitOverlayMeetingReady, onOverlayMeetingReady } from "./lib/events";
 
 function App() {
+  // Keep all model progress events observed while settings tabs are unmounted.
+  useModelDownload();
   const currentView = useMeetingStore((s) => s.currentView);
   const settingsOpen = useMeetingStore((s) => s.settingsOpen);
   const setSettingsOpen = useMeetingStore((s) => s.setSettingsOpen);

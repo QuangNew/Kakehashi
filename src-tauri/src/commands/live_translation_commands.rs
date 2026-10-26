@@ -58,8 +58,9 @@ pub async fn translate_live_segment(
                 router.active_provider_name(),
             )
         };
+        let context = state.live_translations.context(&ticket, &source_lang, &target_lang);
         let translated = provider
-            .translate(&text, Some(&source_lang), &target_lang)
+            .translate_with_context(&text, Some(&source_lang), &target_lang, &context)
             .await
             .map_err(|e| e.to_string())?;
         Ok::<_, String>((translated, name))
@@ -116,6 +117,10 @@ pub async fn translate_live_segment(
     });
     if let Some(error) = save_error {
         return Err(format!("Could not save translation: {}", error));
+    }
+    if current {
+        state.live_translations.remember(&ticket, &result.source_lang, &result.target_lang,
+            &result.original_text, &result.translated_text);
     }
     Ok(current.then_some(result))
 }

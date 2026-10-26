@@ -4,6 +4,14 @@ use tauri::{command, AppHandle, Manager};
 
 use crate::state::AppState;
 
+#[command]
+pub fn get_model_downloads(app: AppHandle) -> Result<Vec<crate::stt::local_engines::downloader::DownloadProgress>, String> {
+    let state = app.state::<AppState>();
+    let manager = state.model_manager.as_ref().ok_or("Model manager not initialized")?;
+    let downloads = manager.lock().map_err(|e| e.to_string())?.downloads();
+    Ok(downloads)
+}
+
 /// List all local STT engines with their models and download status.
 #[command]
 pub async fn list_local_stt_engines(app: AppHandle) -> Result<String, String> {

@@ -38,7 +38,8 @@ async fn main() -> anyhow::Result<()> {
         .samples::<i16>()
         .take((limit * 16000.0) as usize)
         .collect::<Result<_, _>>()?;
-    let model = root.join("models/whisper_cpp/ggml-small.bin");
+    let model = args.iter().find_map(|s| s.strip_prefix("--model=")).map(PathBuf::from)
+        .unwrap_or_else(|| root.join("models/whisper_cpp/ggml-large-v3-turbo.bin"));
     if args.iter().any(|s| s == "--raw") {
         use whisper_rs::{FullParams, SamplingStrategy, WhisperContext};
         let (options, backend, device) = nexq_lib::stt::whisper_cpp::context_parameters();
@@ -88,7 +89,8 @@ async fn main() -> anyhow::Result<()> {
     let translation_loading = Instant::now();
     if translate {
         runtime
-            .initialize(root.join(".cache/local-model-smoke/local-models.json"))
+            .initialize(args.iter().find_map(|s| s.strip_prefix("--models-config=")).map(PathBuf::from)
+                .unwrap_or_else(|| root.join(".cache/local-model-smoke/local-models.json")))
             .map_err(anyhow::Error::msg)?;
         nexq_lib::translation::hy_mt::prepare_local_translation(&translator).await?;
         println!(
@@ -100,7 +102,7 @@ async fn main() -> anyhow::Result<()> {
             .await
             .map_err(anyhow::Error::msg)?;
     }
-    let mut provider = WhisperCppSTT::new(model, Arc::new(RwLock::new(DualPassConfig::default())));
+    let mut provider = WhisperCppSTT::new(model.clone(), Arc::new(RwLock::new(DualPassConfig::default())));
     provider.set_language("ja");
     let (tx, mut rx) = mpsc::channel(256);
     let session_start = Instant::now();
@@ -111,7 +113,7 @@ async fn main() -> anyhow::Result<()> {
     // Match the desktop: two loaded Whisper contexts, with a quiet VI microphone.
     let mut microphone = if args.iter().any(|s| s == "--dual") {
         let mut mic = WhisperCppSTT::new(
-            root.join("models/whisper_cpp/ggml-small.bin"),
+            model,
             Arc::new(RwLock::new(DualPassConfig::default())),
         );
         mic.set_language("vi");
@@ -137,11 +139,14 @@ async fn main() -> anyhow::Result<()> {
         mpsc::channel::<(String, Option<u64>, String, Instant)>(256);
     let translation_task = tokio::spawn(async move {
         let mut translated = 0;
+        let mut context = Vec::new();
         while let Some((text, audio_end, segment, queued)) = translation_rx.recv().await {
             let called = Instant::now();
-            match translator.translate(&text, Some("ja"), "vi").await {
+            match translator.translate_with_context(&text, Some("ja"), "vi", &context).await {
                 Ok(result) => {
                     translated += 1;
+                    context.push(nexq_lib::translation::TranslationContextTurn { source_text: text.clone(), translated_text: result.clone() });
+                    if context.len() > 2 { context.remove(0); }
                     println!(
                         "{}",
                         serde_json::json!({"kind":"translation", "segment":segment, "chars":result.chars().count(), "text":include_text.then_some(&result), "elapsed_ms":start.elapsed().as_millis(), "inference_ms":called.elapsed().as_millis(), "queue_ms":called.duration_since(queued).as_millis(), "lag_ms":audio_end.map(|end| (start.elapsed().as_millis() as u64).saturating_sub(end))})

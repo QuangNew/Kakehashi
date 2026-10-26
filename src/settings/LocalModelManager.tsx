@@ -1,7 +1,7 @@
 // Model download/management UI for local STT engines.
 // Tracks active model, auto-activates on first download, supports Set Active.
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   HardDrive,
   Download,
@@ -17,6 +17,8 @@ import { useConfigStore } from "../stores/configStore";
 import { listLocalSTTEngines, deleteLocalSTTModel } from "../lib/ipc";
 import type { LocalSTTEngineInfo, LocalSTTModelInfo } from "../lib/types";
 import { showToast } from "../stores/toastStore";
+import { isActiveDownload } from "../stores/modelDownloadStore";
+import type { ModelDownloadProgress } from "../lib/types";
 
 interface LocalModelManagerProps {
   compact?: boolean;
@@ -27,14 +29,15 @@ interface LocalModelManagerProps {
 export function LocalModelManager({ compact, engineFilter }: LocalModelManagerProps) {
   const [engines, setEngines] = useState<LocalSTTEngineInfo[]>([]);
   const [loading, setLoading] = useState(true);
-  const { downloads, startDownload, cancelDownload } = useModelDownload();
+  const { downloads, startDownload, cancelDownload, syncing, syncError } = useModelDownload();
+  const completedRevisions = useRef(new Map<string, number>());
   const activeWhisperModel = useConfigStore((s) => s.activeWhisperModel);
   const setActiveWhisperModel = useConfigStore((s) => s.setActiveWhisperModel);
   const activeModelPerEngine = useConfigStore((s) => s.activeModelPerEngine);
   const setActiveModelForEngine = useConfigStore((s) => s.setActiveModelForEngine);
 
-  async function loadEngines() {
-    setLoading(true);
+  async function loadEngines(showLoading = true) {
+    if (showLoading) setLoading(true);
     try {
       const data = await listLocalSTTEngines();
       setEngines(data);
@@ -53,11 +56,12 @@ export function LocalModelManager({ compact, engineFilter }: LocalModelManagerPr
 
   // When a download completes: reload engines, auto-activate if no active model for that engine
   useEffect(() => {
-    const completed = Object.entries(downloads).find(
-      ([, d]) => d.status === "complete"
+    const completed = Object.entries(downloads).filter(
+      ([key, d]) => d.status === "complete" && completedRevisions.current.get(key) !== d.revision
     );
-    if (completed) {
-      loadEngines().then((data) => {
+    if (completed.length) {
+      for (const [key, d] of completed) completedRevisions.current.set(key, d.revision);
+      loadEngines(false).then((data) => {
         for (const engine of data) {
           const engineActiveModel = activeModelPerEngine[engine.engine];
           if (!engineActiveModel) {
@@ -93,6 +97,7 @@ export function LocalModelManager({ compact, engineFilter }: LocalModelManagerPr
 
   return (
     <div className="space-y-4">
+      {syncError && <p role="alert" className="text-xs text-destructive">Không đồng bộ được tiến trình tải: {syncError}. Đang thử kết nối lại…</p>}
       {filteredEngines.map((engine) => (
         <div key={engine.engine}>
           {!compact && !engineFilter && (
@@ -111,10 +116,7 @@ export function LocalModelManager({ compact, engineFilter }: LocalModelManagerPr
             {engine.models.map((model) => {
               const downloadKey = `${model.engine}:${model.id}`;
               const progress = downloads[downloadKey];
-              const isDownloading =
-                progress?.status === "downloading" ||
-                progress?.status === "verifying" ||
-                progress?.status === "extracting";
+              const isDownloading = isActiveDownload(progress?.status);
               // Per-engine active model: check if THIS model is active for THIS engine
               const isActive = (activeModelPerEngine[model.engine] ?? activeWhisperModel) === model.id;
 
@@ -126,6 +128,7 @@ export function LocalModelManager({ compact, engineFilter }: LocalModelManagerPr
                   isDownloading={isDownloading}
                   progress={progress}
                   compact={compact}
+                  syncing={syncing}
                   onDownload={() => startDownload(model.engine, model.id)}
                   onCancel={() => cancelDownload(model.engine, model.id)}
                   onDelete={async () => {
@@ -225,6 +228,7 @@ function ModelRow({
   isDownloading,
   progress,
   compact,
+  syncing,
   onDownload,
   onCancel,
   onDelete,
@@ -233,13 +237,9 @@ function ModelRow({
   model: LocalSTTModelInfo;
   isActive: boolean;
   isDownloading: boolean;
-  progress?: {
-    percent: number;
-    status: string;
-    downloaded_bytes: number;
-    total_bytes: number;
-  };
+  progress?: ModelDownloadProgress;
   compact?: boolean;
+  syncing?: boolean;
   onDownload: () => void;
   onCancel: () => void;
   onDelete: () => void;
@@ -315,10 +315,12 @@ function ModelRow({
           ) : (
             <button
               onClick={onDownload}
-              className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-meta font-medium text-primary hover:bg-primary/20"
+              disabled={syncing}
+              title={syncing ? "Đang kiểm tra tải nền…" : "Download / resume model"}
+              className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-meta font-medium text-primary hover:bg-primary/20 disabled:opacity-50"
             >
               <Download className="h-3 w-3" />
-              {compact ? "" : "Download"}
+              {compact ? "" : progress?.status === "error" || progress?.status === "cancelled" ? "Resume" : "Download"}
             </button>
           )}
         </div>
@@ -335,7 +337,11 @@ function ModelRow({
           </div>
           <div className="mt-0.5 flex items-center justify-between text-meta text-muted-foreground">
             <span>
-              {progress.status === "extracting"
+              {progress.status === "queued"
+                ? "Connecting…"
+                : progress.status === "retrying"
+                  ? "Kết nối gián đoạn; đang tải tiếp…"
+                  : progress.status === "extracting"
                 ? "Extracting..."
                 : progress.status === "verifying"
                   ? "Verifying..."
@@ -345,6 +351,7 @@ function ModelRow({
           </div>
         </div>
       )}
+      {progress?.status === "error" && <p role="alert" className="mt-1.5 break-words text-xs text-destructive">{progress.error || "Tải bị gián đoạn."} Phần đã tải được giữ; bấm Resume để tiếp tục.</p>}
     </div>
   );
 }

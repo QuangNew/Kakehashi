@@ -453,6 +453,10 @@ export async function updateWhisperDualPassConfig(
 
 // == IPC: Local STT Models ==
 
+export async function getModelDownloads(): Promise<import("./types").ModelDownloadProgress[]> {
+  return invoke("get_model_downloads");
+}
+
 export async function listLocalSTTEngines(): Promise<LocalSTTEngineInfo[]> {
   const result = await invoke<string>("list_local_stt_engines");
   const raw = JSON.parse(result);

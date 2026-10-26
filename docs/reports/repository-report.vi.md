@@ -1,6 +1,6 @@
 # Kakehashi: cấu trúc và khả năng hiện tại
 
-Ngày 25/10/2026. Kakehashi là ứng dụng Windows phát triển từ NexQ, dùng Tauri 2, React/TypeScript, Rust và SQLite. Phạm vi đầu tiên là phụ đề Việt–Nhật và trợ lý cuộc họp; chưa có TTS hay virtual microphone.
+Ngày 26/10/2026. Kakehashi là ứng dụng Windows phát triển từ NexQ, dùng Tauri 2, React/TypeScript, Rust và SQLite. Phạm vi đầu tiên là phụ đề Việt–Nhật và trợ lý cuộc họp; chưa có TTS hay virtual microphone. Model mặc định hiện tại và kiểm chứng: [nâng model](quality-upgrade.vi.md).
 
 ## Những gì có trong repository
 
@@ -22,7 +22,7 @@ Model, runtime, công cụ native, dependencies cài đặt, EXE/DLL, cache và 
 
 ## Luồng chức năng
 
-Online thu mic và system audio riêng; mặc định mic Việt → Nhật, system Nhật → Việt. Whisper Small local/Vulkan chốt đoạn theo khoảng lặng hoặc cap 3 giây, chuyển sang AI dịch độc lập rồi hiện phụ đề song ngữ. Copilot đọc transcript và tài liệu theo cấu hình AI Actions. In-person dùng một mic chung với provider Room/Them.
+Online thu mic và system audio riêng; mặc định mic Việt → Nhật, system Nhật → Việt. Whisper Large v3 Turbo local/Vulkan chốt đoạn theo khoảng lặng hoặc cap 3 giây, chuyển sang AI dịch độc lập rồi hiện phụ đề song ngữ. Hy-MT2 7B/Groq/Gemini nhận ngữ cảnh trước đó có giới hạn. Copilot đọc transcript và tài liệu theo cấu hình AI Actions. In-person dùng một mic chung với provider Room/Them.
 
 | Vai trò | Provider được giữ |
 | --- | --- |

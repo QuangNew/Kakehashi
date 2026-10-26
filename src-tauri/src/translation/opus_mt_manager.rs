@@ -169,6 +169,8 @@ impl OpusMtManager {
                 let _ = app_handle.emit(
                     "model_download_progress",
                     &DownloadProgress {
+            revision: crate::stt::local_engines::downloader::next_revision(),
+            error: None,
                         engine: "opus_mt".to_string(),
                         model_id: model_id_str.clone(),
                         downloaded_bytes: downloaded,
@@ -264,6 +266,8 @@ impl OpusMtManager {
             let _ = app_handle.emit(
                 "model_download_progress",
                 &DownloadProgress {
+            revision: crate::stt::local_engines::downloader::next_revision(),
+            error: None,
                     engine: "opus_mt".to_string(),
                     model_id: model_id_str,
                     downloaded_bytes: total_size,
@@ -360,6 +364,8 @@ fn emit_error(app_handle: &AppHandle, model_id: &str, msg: &str) {
     let _ = app_handle.emit(
         "model_download_progress",
         &DownloadProgress {
+            revision: crate::stt::local_engines::downloader::next_revision(),
+            error: None,
             engine: "opus_mt".to_string(),
             model_id: model_id.to_string(),
             downloaded_bytes: 0,

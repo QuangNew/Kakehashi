@@ -92,9 +92,9 @@ impl Default for LocalModelsConfig {
                 .to_string_lossy()
                 .into_owned(),
             translation: ModelSettings {
-                file: "translation/Hy-MT2-1.8B-Q4_K_M.gguf".into(),
+                file: "translation/Hy-MT2-7B-Q4_K_M.gguf".into(),
                 context: 2048,
-                gpu_layers: 99,
+                gpu_layers: 22,
             },
             copilot: ModelSettings {
                 file: "copilot/Qwen3-1.7B-Q4_K_M.gguf".into(),

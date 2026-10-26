@@ -18,7 +18,7 @@ vi.mock("../lib/ipc", () => ({ listAudioDevices: vi.fn(async () => ({ inputs: []
   getTokenBudget: vi.fn(async () => ({ limit: 4096, total: 0, segments: [] })),
   getRagConfig: vi.fn(async () => ({ enabled: false, embedding_model: "nomic-embed-text", embedding_dimensions: 768 })), updateRagConfig: mocks.updateRag,
 }));
-vi.mock("../stores/configStore", () => ({ useConfigStore: { getState: () => ({ setMeetingAudioConfig: mocks.setAudio, activateLLMProvider: mocks.activate, setContextStrategy: vi.fn() }) } }));
+vi.mock("../stores/configStore", () => ({ useConfigStore: { getState: () => ({ setActiveWhisperModel: vi.fn(), setActiveModelForEngine: vi.fn(), setMeetingAudioConfig: mocks.setAudio, activateLLMProvider: mocks.activate, setContextStrategy: vi.fn() }) } }));
 vi.mock("../stores/meetingStore", () => ({ useMeetingStore: (select: (state: { activeMeeting: object | null }) => unknown) => select({ activeMeeting: mocks.activeMeeting }) }));
 vi.mock("../stores/translationStore", () => {
   const state = { direction: "vi-ja", setDirection: vi.fn(), setProvider: vi.fn(), setBidirectional: vi.fn(), setDisplayMode: vi.fn(), setAutoTranslateEnabled: vi.fn() };
@@ -28,7 +28,7 @@ vi.mock("../stores/aiActionsStore", () => ({ useAIActionsStore: { getState: () =
 vi.mock("../stores/ragStore", () => ({ useRagStore: { getState: () => ({ loadRagConfig: vi.fn(async () => {}), markSourcesChanged: vi.fn() }) } }));
 import { LocalModelsSettings } from "./LocalModelsSettings";
 
-beforeEach(() => { vi.clearAllMocks(); mocks.activeMeeting = null; mocks.start.mockResolvedValue("local"); mocks.save.mockResolvedValue(undefined); mocks.activate.mockResolvedValue(undefined); mocks.engines.mockResolvedValue([{ engine: "whisper_cpp", models: [{ id: "small", is_downloaded: true }] }]); });
+beforeEach(() => { vi.clearAllMocks(); mocks.activeMeeting = null; mocks.start.mockResolvedValue("local"); mocks.save.mockResolvedValue(undefined); mocks.activate.mockResolvedValue(undefined); mocks.engines.mockResolvedValue([{ engine: "whisper_cpp", models: [{ id: "large-v3-turbo", is_downloaded: true }] }]); });
 afterEach(cleanup);
 describe("local model setup", () => {
   it("applies bilingual audio and the dedicated translator without switching the copilot", async () => {
@@ -62,7 +62,7 @@ describe("local model setup", () => {
     mocks.engines.mockResolvedValueOnce([]);
     render(<LocalModelsSettings />);
     fireEvent.click(await screen.findByRole("button", { name: "Áp dụng chế độ Việt–Nhật" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Thiếu Whisper Small");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Thiếu Whisper Large v3 Turbo");
     expect(mocks.setAudio).not.toHaveBeenCalled();
     expect(mocks.start).not.toHaveBeenCalled();
   });

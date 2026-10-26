@@ -4,8 +4,8 @@ pub mod model_registry;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -18,7 +18,32 @@ use model_registry::{get_engines, get_model, get_models_for_engine, ModelDefinit
 /// For archive models, `filename` is a directory after extraction.
 pub struct ModelManager {
     models_dir: PathBuf,
-    active_downloads: HashMap<String, Arc<AtomicBool>>,
+    active_downloads: HashMap<String, Arc<DownloadJob>>,
+}
+
+struct DownloadJob {
+    cancel: Arc<AtomicBool>,
+    progress: Mutex<downloader::DownloadProgress>,
+}
+impl DownloadJob {
+    fn snapshot(&self) -> downloader::DownloadProgress { self.progress.lock().unwrap().clone() }
+    fn active(&self) -> bool {
+        !matches!(self.snapshot().status.as_str(), "complete" | "error" | "cancelled")
+    }
+    fn report(&self, app: &AppHandle, bytes: u64, total: u64, status: &str, error: Option<String>) {
+        let progress = {
+            let mut p = self.progress.lock().unwrap();
+            p.downloaded_bytes = bytes;
+            if total > 0 { p.total_bytes = total; }
+            p.percent = if p.total_bytes > 0 { (bytes as f64 / p.total_bytes as f64 * 100.0).clamp(0.0, 100.0) as f32 } else { 0.0 };
+            if status == "complete" { p.percent = 100.0; }
+            p.status = status.into();
+            p.error = error;
+            p.revision = downloader::next_revision();
+            p.clone()
+        };
+        let _ = app.emit("model_download_progress", progress);
+    }
 }
 
 impl ModelManager {
@@ -78,214 +103,84 @@ impl ModelManager {
         }
     }
 
-    /// Start downloading a model. Spawns an async task that emits progress events.
-    /// For archive models, automatically extracts after download.
-    pub fn download_model(
-        &mut self,
-        engine: &str,
-        model_id: &str,
-        app_handle: AppHandle,
-    ) -> Result<(), String> {
+    /// Authoritative snapshots survive tab changes and event delivery gaps.
+    pub fn downloads(&self) -> Vec<downloader::DownloadProgress> {
+        self.active_downloads.values().map(|job| job.snapshot()).collect()
+    }
+
+    pub fn download_model(&mut self, engine: &str, model_id: &str, app: AppHandle) -> Result<(), String> {
         let def = get_model(engine, model_id)
-            .ok_or_else(|| format!("Unknown model: {}:{}", engine, model_id))?;
-
-        // Ensure engine subdirectory exists
-        let engine_dir = self.models_dir.join(engine);
-        std::fs::create_dir_all(&engine_dir)
-            .map_err(|e| format!("Failed to create engine directory: {}", e))?;
-
-        let download_key = format!("{}:{}", engine, model_id);
-        if self.active_downloads.contains_key(&download_key) {
-            // Check if the download or extraction is actually still running
-            let check_path = if def.is_archive {
-                engine_dir.join(format!("{}.tar.bz2", def.filename))
-            } else {
-                self.model_file_path(engine, def.filename)
-            };
-            let tmp_path = check_path.with_extension("download");
-            // Still downloading (temp file exists) or still extracting (archive exists)
-            if tmp_path.exists() {
-                return Err("Download already in progress".to_string());
-            }
-            if def.is_archive && check_path.exists() {
-                return Err("Extraction in progress".to_string());
-            }
-            // Stale entry — previous download finished, clean up
-            self.active_downloads.remove(&download_key);
+            .ok_or_else(|| format!("Unknown model: {engine}:{model_id}"))?;
+        let key = format!("{engine}:{model_id}");
+        if self.active_downloads.get(&key).is_some_and(|job| job.active()) {
+            return Err("Download already in progress".into());
         }
-
-        let is_archive = def.is_archive;
-        let dest_path = if is_archive {
-            // Download the archive to a .tar.bz2 file, extract afterward
-            engine_dir.join(format!("{}.tar.bz2", def.filename))
-        } else {
-            self.model_file_path(engine, def.filename)
-        };
-
-        let cancel_flag = Arc::new(AtomicBool::new(false));
-        self.active_downloads
-            .insert(download_key, Arc::clone(&cancel_flag));
-
-        let url = def.download_url.to_string();
-        let sha256 = def.sha256.to_string();
-        let engine_str = engine.to_string();
-        let model_id_str = model_id.to_string();
-
-        // Also capture the expected model directory path for cleanup of old files
-        let model_dir_path = engine_dir.join(def.filename);
-
+        let installed = self.is_model_downloaded(engine, model_id);
+        let engine_dir = self.models_dir.join(engine);
+        std::fs::create_dir_all(&engine_dir).map_err(|e| e.to_string())?;
+        let dest = if def.is_archive { engine_dir.join(format!("{}.tar.bz2", def.filename)) }
+                   else { engine_dir.join(def.filename) };
+        let job = Arc::new(DownloadJob {
+            cancel: Arc::new(AtomicBool::new(false)),
+            progress: Mutex::new(downloader::DownloadProgress {
+                engine: engine.into(), model_id: model_id.into(),
+                downloaded_bytes: 0, total_bytes: def.size_bytes, percent: 0.0,
+                status: "queued".into(), error: None,
+                revision: downloader::next_revision(),
+            }),
+        });
+        self.active_downloads.insert(key, job.clone());
+        if installed {
+            job.report(&app, def.size_bytes, def.size_bytes, "complete", None);
+            return Ok(());
+        }
+        let definition = def.clone();
         tokio::spawn(async move {
-            let result = downloader::download_file(
-                &url,
-                &dest_path,
-                &sha256,
-                &engine_str,
-                &model_id_str,
-                cancel_flag,
-                app_handle.clone(),
-            )
-            .await;
-
-            if let Err(e) = result {
-                log::error!(
-                    "Model download failed ({}:{}): {}",
-                    engine_str,
-                    model_id_str,
-                    e
-                );
-                let _ = app_handle.emit(
-                    "model_download_progress",
-                    &downloader::DownloadProgress {
-                        engine: engine_str,
-                        model_id: model_id_str,
-                        downloaded_bytes: 0,
-                        total_bytes: 0,
-                        percent: 0.0,
-                        status: "error".to_string(),
-                    },
-                );
-                return;
-            }
-
-            // Post-download extraction for archive models
-            if is_archive {
-                // Emit "extracting" status
-                let _ = app_handle.emit(
-                    "model_download_progress",
-                    &downloader::DownloadProgress {
-                        engine: engine_str.clone(),
-                        model_id: model_id_str.clone(),
-                        downloaded_bytes: 0,
-                        total_bytes: 0,
-                        percent: 100.0,
-                        status: "extracting".to_string(),
-                    },
-                );
-
-                // Remove any old raw file at the model directory path
-                // (leftover from previous buggy downloads that saved the archive as a file)
-                if model_dir_path.is_file() {
-                    log::info!(
-                        "Removing stale raw archive file at: {}",
-                        model_dir_path.display()
-                    );
-                    let _ = tokio::fs::remove_file(&model_dir_path).await;
+            let result = async {
+                downloader::download_file(
+                    definition.download_url, &dest, definition.sha256, job.cancel.clone(),
+                    |bytes, total, status| job.report(&app, bytes, total, status, None),
+                ).await?;
+                if definition.is_archive {
+                    let current = job.snapshot();
+                    job.report(&app, current.downloaded_bytes, current.total_bytes, "extracting", None);
+                    let archive = dest.clone();
+                    let old_raw = engine_dir.join(definition.filename);
+                    if old_raw.is_file() { tokio::fs::remove_file(old_raw).await.map_err(|e| e.to_string())?; }
+                    tokio::task::spawn_blocking(move || downloader::extract_tar_bz2(&archive, &engine_dir))
+                        .await.map_err(|e| e.to_string())??;
+                    tokio::fs::remove_file(&dest).await.map_err(|e| e.to_string())?;
                 }
-
-                let archive_for_extract = dest_path.clone();
-                let extract_dest = engine_dir;
-
-                let extract_result = tokio::task::spawn_blocking(move || {
-                    downloader::extract_tar_bz2(&archive_for_extract, &extract_dest)
-                })
-                .await;
-
-                match extract_result {
-                    Ok(Ok(dir)) => {
-                        // Delete the archive file
-                        let _ = tokio::fs::remove_file(&dest_path).await;
-                        log::info!("Model extracted to: {}", dir.display());
-                        let _ = app_handle.emit(
-                            "model_download_progress",
-                            &downloader::DownloadProgress {
-                                engine: engine_str,
-                                model_id: model_id_str,
-                                downloaded_bytes: 0,
-                                total_bytes: 0,
-                                percent: 100.0,
-                                status: "complete".to_string(),
-                            },
-                        );
-                    }
-                    Ok(Err(e)) => {
-                        log::error!(
-                            "Extraction failed ({}:{}): {}",
-                            engine_str,
-                            model_id_str,
-                            e
-                        );
-                        let _ = app_handle.emit(
-                            "model_download_progress",
-                            &downloader::DownloadProgress {
-                                engine: engine_str,
-                                model_id: model_id_str,
-                                downloaded_bytes: 0,
-                                total_bytes: 0,
-                                percent: 0.0,
-                                status: "error".to_string(),
-                            },
-                        );
-                    }
-                    Err(e) => {
-                        log::error!(
-                            "Extraction task panicked ({}:{}): {}",
-                            engine_str,
-                            model_id_str,
-                            e
-                        );
-                        let _ = app_handle.emit(
-                            "model_download_progress",
-                            &downloader::DownloadProgress {
-                                engine: engine_str,
-                                model_id: model_id_str,
-                                downloaded_bytes: 0,
-                                total_bytes: 0,
-                                percent: 0.0,
-                                status: "error".to_string(),
-                            },
-                        );
-                    }
+                Ok::<_, String>(())
+            }.await;
+            let current = job.snapshot();
+            match result {
+                Ok(()) => job.report(&app, current.total_bytes, current.total_bytes, "complete", None),
+                Err(error) => {
+                    let cancelled = job.cancel.load(Ordering::Acquire);
+                    let status = if cancelled { "cancelled" } else { "error" };
+                    if !cancelled { log::error!("Model download failed ({}:{}): {}", definition.engine, definition.model_id, error); }
+                    let bytes = tokio::fs::metadata(dest.with_extension("download")).await
+                        .map(|m| m.len()).unwrap_or(current.downloaded_bytes);
+                    job.report(&app, bytes, current.total_bytes, status, (!cancelled).then_some(error));
                 }
-            } else {
-                // Non-archive: download is the final step, emit complete
-                let _ = app_handle.emit(
-                    "model_download_progress",
-                    &downloader::DownloadProgress {
-                        engine: engine_str,
-                        model_id: model_id_str,
-                        downloaded_bytes: 0,
-                        total_bytes: 0,
-                        percent: 100.0,
-                        status: "complete".to_string(),
-                    },
-                );
             }
         });
-
         Ok(())
     }
 
-    /// Cancel an active download.
     pub fn cancel_download(&mut self, engine: &str, model_id: &str) {
-        let key = format!("{}:{}", engine, model_id);
-        if let Some(flag) = self.active_downloads.remove(&key) {
-            flag.store(true, std::sync::atomic::Ordering::SeqCst);
-            log::info!("Cancelled download for {}:{}", engine, model_id);
+        if let Some(job) = self.active_downloads.get(&format!("{engine}:{model_id}")) {
+            // Keep ownership until the worker exits; a second writer must not start yet.
+            job.cancel.store(true, Ordering::Release);
         }
     }
 
     /// Delete a downloaded model from disk (handles both files and directories).
     pub fn delete_model(&mut self, engine: &str, model_id: &str) -> Result<(), String> {
+        if self.active_downloads.get(&format!("{engine}:{model_id}")).is_some_and(|job| job.active()) {
+            return Err("Cancel the active download before deleting this model".into());
+        }
         let def = get_model(engine, model_id)
             .ok_or_else(|| format!("Unknown model: {}:{}", engine, model_id))?;
 

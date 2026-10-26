@@ -9,6 +9,8 @@ pub mod llm_provider;
 pub mod hy_mt;
 pub mod api;
 pub mod live;
+pub mod prompt;
+pub use prompt::TranslationContextTurn;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -121,6 +123,13 @@ pub trait TranslationProvider: Send + Sync {
         source: Option<&str>,
         target: &str,
     ) -> Result<String, TranslationError>;
+
+    async fn translate_with_context(
+        &self, text: &str, source: Option<&str>, target: &str,
+        _context: &[TranslationContextTurn],
+    ) -> Result<String, TranslationError> {
+        self.translate(text, source, target).await
+    }
 
     async fn translate_batch(
         &self,

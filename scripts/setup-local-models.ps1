@@ -1,6 +1,7 @@
 param(
     [string]$ModelsRoot = (Join-Path $PSScriptRoot '../models'),
     [string]$RuntimeRoot = (Join-Path $PSScriptRoot '../runtimes/llama'),
+    [ValidateSet('quality', 'fast')][string]$TranslationProfile = 'quality',
     [switch]$WithCopilot,
     [switch]$WithEmbeddings,
     [switch]$RuntimeOnly
@@ -49,6 +50,7 @@ $taskManifest.runtime | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Ru
 
 if (-not $RuntimeOnly) {
     foreach ($taskModel in $taskManifest.models) {
+        if ($taskModel.role -eq 'translation' -and $taskModel.profile -ne $TranslationProfile) { continue }
         if ($taskModel.role -eq 'copilot' -and -not $WithCopilot) { continue }
         if ($taskModel.role -eq 'embeddings' -and -not $WithEmbeddings) { continue }
         $taskUrl = 'https://huggingface.co/' + $taskModel.repo + '/resolve/' + $taskModel.revision + '/' + $taskModel.file

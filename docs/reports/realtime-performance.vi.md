@@ -1,5 +1,7 @@
 # Độ trễ và chất lượng phụ đề Kakehashi
 
+> Báo cáo mốc 25/10 dùng Whisper Small và Hy-MT2 1.8B. Model và số đo hiện tại: [nâng model 26/10](quality-upgrade.vi.md).
+
 Đo ngày 25/10/2026 trên i7-13700HX, RAM 16 GB, RTX 4050 Laptop 6 GB, Windows. Nguồn: [podcast Nhật](https://www.youtube.com/watch?v=SmxSCZzV7j0), đoạn khoảng 00:30–02:00. WAV 90 giây, mono PCM16 16 kHz; Whisper Small và Hy-MT2 Q4_K_M không thay trọng số để lấy tốc độ.
 
 ## Những thay đổi đã làm

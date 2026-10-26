@@ -23,16 +23,16 @@ export type DeviceHint = "default_mic" | "default_output" | "mic_2"; // Default 
 export const BUILT_IN_PRESETS: MeetingPreset[] = [
   {
     name: "Việt ↔ 日本語 (Local)",
-    description: "Mic tiếng Việt · System audio tiếng Nhật · Whisper Small",
+    description: "Mic tiếng Việt · System audio tiếng Nhật · Whisper Large v3 Turbo",
     badge: "VI ↔ JA",
-    you: { hint: "default_mic", stt: "whisper_cpp", language: "vi-VN", model: "small" },
-    them: { hint: "default_output", stt: "whisper_cpp", language: "ja-JP", model: "small" },
+    you: { hint: "default_mic", stt: "whisper_cpp", language: "vi-VN", model: "large-v3-turbo" },
+    them: { hint: "default_output", stt: "whisper_cpp", language: "ja-JP", model: "large-v3-turbo" },
     requiresDownload: "whisper_cpp",
   },
   {
-    name: "日本語 ↔ Việt (Local)", description: "Mic tiếng Nhật · System audio tiếng Việt · Whisper Small", badge: "JA ↔ VI",
-    you: { hint: "default_mic", stt: "whisper_cpp", language: "ja-JP", model: "small" },
-    them: { hint: "default_output", stt: "whisper_cpp", language: "vi-VN", model: "small" }, requiresDownload: "whisper_cpp",
+    name: "日本語 ↔ Việt (Local)", description: "Mic tiếng Nhật · System audio tiếng Việt · Whisper Large v3 Turbo", badge: "JA ↔ VI",
+    you: { hint: "default_mic", stt: "whisper_cpp", language: "ja-JP", model: "large-v3-turbo" },
+    them: { hint: "default_output", stt: "whisper_cpp", language: "vi-VN", model: "large-v3-turbo" }, requiresDownload: "whisper_cpp",
   },
   {
     name: "Zero Setup",

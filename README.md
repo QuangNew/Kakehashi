@@ -2,8 +2,8 @@
 
 Ứng dụng Windows hiển thị phụ đề song ngữ Việt–Nhật và trợ lý cuộc họp, phát triển từ [NexQ](https://github.com/naxhq/NexQ), giấy phép MIT. Kakehashi có repository và lịch sử Git riêng; thông tin nguồn gốc ở [NOTICE.md](NOTICE.md).
 
-- Microphone và system audio có ngôn ngữ riêng; mặc định Whisper Small local dùng GPU Vulkan. Có thêm các provider STT cloud, browser, Windows Speech và ONNX/Sherpa/Parakeet.
-- AI dịch: Hy-MT2 trong folder, Groq API hoặc Google AI Studio / Gemini API độc lập; giữ Microsoft/Google Cloud Translation, DeepL, OPUS-MT và tùy chọn dùng chung copilot.
+- Microphone và system audio có ngôn ngữ riêng; mặc định Whisper Large v3 Turbo local dùng GPU Vulkan. Có thêm các provider STT cloud, browser, Windows Speech và ONNX/Sherpa/Parakeet.
+- AI dịch: Hy-MT2 7B trong folder, Groq API hoặc Google AI Studio / Gemini API độc lập; giữ Microsoft/Google Cloud Translation, DeepL, OPUS-MT và tùy chọn dùng chung copilot.
 - AI copilot chọn provider/model/key riêng; hỗ trợ local GGUF, Ollama, LM Studio, Claude subscription/CLI, Groq, Gemini, OpenAI, Anthropic, OpenRouter và Custom API.
 - Overlay song ngữ, gợi ý trả lời, Meeting/Interview/Lecture/Webinar/Oral Exam, chế độ online/in-person, prompt tùy chỉnh, tài liệu/RAG local, lịch sử, ghi âm và nghe lại, stealth/hotkeys.
 
@@ -42,6 +42,7 @@ pnpm models:smoke   # Kiểm thử các model thật đang có
 - [Phát triển, kiểm thử và dữ liệu](docs/guides/development.vi.md)
 - [Cấu trúc và khả năng hiện tại](docs/reports/repository-report.vi.md)
 - [Hiệu năng realtime và giới hạn phép đo](docs/reports/realtime-performance.vi.md)
+- [Nâng model Turbo/7B và sửa giao diện](docs/reports/quality-upgrade.vi.md)
 - [Bản sửa upstream đã chọn](docs/reports/upstream-sync.vi.md), [hướng dẫn NexQ tham chiếu](docs/reports/upstream-user-guide/README.md)
 
 Dữ liệu ứng dụng dùng `%APPDATA%/com.tvnjp.app`. File tài liệu/ghi âm có tham chiếu từ đường dẫn NexQ cũ được sao chép và kiểm tra trước khi cập nhật DB; bản gốc và backup DB được giữ. Key API lưu qua credential manager của Windows.

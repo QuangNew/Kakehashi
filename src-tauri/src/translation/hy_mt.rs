@@ -35,14 +35,6 @@ impl HyMtTranslator {
                 .expect("local HTTP client"),
         }
     }
-    fn language(code: &str) -> Result<&'static str, TranslationError> {
-        match code.split('-').next().unwrap_or(code) {
-            "ja" => Ok("Japanese"),
-            "vi" => Ok("Vietnamese"),
-            "en" => Ok("English"),
-            _ => Err(TranslationError::UnsupportedLanguage(code.into())),
-        }
-    }
 }
 
 #[async_trait]
@@ -59,10 +51,16 @@ impl TranslationProvider for HyMtTranslator {
     async fn translate(
         &self,
         text: &str,
-        _source: Option<&str>,
+        source: Option<&str>,
         target: &str,
     ) -> Result<String, TranslationError> {
-        let language = Self::language(target)?;
+        self.translate_with_context(text, source, target, &[]).await
+    }
+    async fn translate_with_context(
+        &self, text: &str, source: Option<&str>, target: &str,
+        context: &[TranslationContextTurn],
+    ) -> Result<String, TranslationError> {
+        let prompt = super::prompt::local_prompt(text, source, target, context)?;
         let runtime = self.runtime.clone();
         let endpoint = tokio::spawn(async move { runtime.ensure(ModelRole::Translation).await })
             .await
@@ -70,7 +68,7 @@ impl TranslationProvider for HyMtTranslator {
             .map_err(TranslationError::NotConfigured)?;
         let response = self.client.post(format!("{}/chat/completions", endpoint)).json(&serde_json::json!({
             "model": "translation", "stream": false,
-            "messages": [{"role": "user", "content": format!("Translate the following text into {}. Only output the translation, without explanations.\n\n{}", language, text)}],
+            "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.7, "top_p": 0.6, "top_k": 20, "repeat_penalty": 1.05, "max_tokens": 512
         })).send().await.map_err(|e| TranslationError::Http(e.to_string()))?;
         let status = response.status();

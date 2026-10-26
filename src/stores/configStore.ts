@@ -1097,7 +1097,7 @@ export const useConfigStore = create<ConfigState>((set) => ({
       if (resolvedMeetingConfig) {
         const amp = activeModelPerEngine ?? {};
         const defaultModels: Record<string, string> = {
-          whisper_cpp: activeWhisperModel ?? "small",
+          whisper_cpp: activeWhisperModel ?? "large-v3-turbo",
           sherpa_onnx: "streaming-zipformer-en-20M",
           ort_streaming: "zipformer-en-20M",
           parakeet_tdt: "parakeet-tdt-0.6b-v3-int8",

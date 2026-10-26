@@ -4,7 +4,7 @@
 
 | Vai trò | Lựa chọn |
 | --- | --- |
-| STT hai nguồn | Whisper.cpp Small/Vulkan là mặc định; giữ Windows Speech, Web Speech, Deepgram, Whisper API, Azure Speech, Groq Whisper, Sherpa-ONNX, ORT Streaming và Parakeet |
+| STT hai nguồn | Whisper.cpp Large v3 Turbo/Vulkan là mặc định; giữ Windows Speech, Web Speech, Deepgram, Whisper API, Azure Speech, Groq Whisper, Sherpa-ONNX, ORT Streaming và Parakeet |
 | AI 1 — dịch | Hy-MT2 / Groq / Google AI Studio–Gemini với cấu hình riêng; giữ Microsoft Translator, Google Cloud Translation, DeepL, OPUS-MT và tùy chọn dùng chung active copilot |
 | AI 2 — copilot | Local GGUF / Ollama / LM Studio / Claude CLI–subscription / Groq / Gemini / OpenAI / Anthropic / OpenRouter / Custom API |
 | Tài liệu | Đưa trực tiếp vào prompt hoặc truy xuất RAG bằng embedding local |

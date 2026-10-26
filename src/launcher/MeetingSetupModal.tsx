@@ -100,15 +100,15 @@ export function MeetingSetupModal({ open, onStart, onCancel }: MeetingSetupModal
     <div
       ref={backdropRef}
       onClick={handleBackdropClick}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-3 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-label="Meeting setup"
     >
-      <div className="w-[420px] rounded-2xl border border-border/40 bg-card shadow-2xl overflow-hidden">
+      <div className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-[420px] flex-col overflow-hidden rounded-2xl border border-border/40 bg-card shadow-2xl">
 
         {/* ── HEADER ── */}
-        <div className="flex items-center justify-between border-b border-border/20 px-5 py-4">
+        <div className="flex shrink-0 items-center justify-between border-b border-border/20 px-5 py-4">
           <div className="flex items-center gap-2.5">
             <div
               className="flex h-8 w-8 items-center justify-center rounded-lg"
@@ -137,7 +137,7 @@ export function MeetingSetupModal({ open, onStart, onCancel }: MeetingSetupModal
 
         {/* ── COMPACT VIEW (remembered, not expanded) ── */}
         {!isExpanded && rememberedSetup !== null ? (
-          <div className="px-5 py-4 space-y-4">
+          <div className="min-h-0 space-y-4 overflow-y-auto overscroll-contain px-5 py-4">
             {/* Saved preferences summary */}
             <div className="rounded-xl border border-border/30 bg-secondary/20 px-4 py-3 space-y-2">
               <div className="flex items-center justify-between">
@@ -198,7 +198,7 @@ export function MeetingSetupModal({ open, onStart, onCancel }: MeetingSetupModal
           </div>
         ) : (
           /* ── FULL SELECTION VIEW ── */
-          <div className="px-5 py-4 space-y-5">
+          <div className="min-h-0 space-y-5 overflow-y-auto overscroll-contain px-5 py-4">
 
             {/* ── Audio Mode Cards ── */}
             <div>
@@ -295,6 +295,9 @@ export function MeetingSetupModal({ open, onStart, onCancel }: MeetingSetupModal
               <div className="relative">
                 <button
                   onClick={() => setShowScenarioPicker((v) => !v)}
+                  aria-label="Scenario"
+                  aria-expanded={showScenarioPicker}
+                  aria-controls="meeting-scenario-options"
                   className="flex w-full items-center justify-between rounded-xl border border-border/30 bg-secondary/10 px-3.5 py-2.5 text-sm font-medium text-foreground transition-all duration-150 hover:bg-secondary/20 hover:border-border/50 cursor-pointer"
                 >
                   <span>{getScenarioName(scenario)}</span>
@@ -304,7 +307,7 @@ export function MeetingSetupModal({ open, onStart, onCancel }: MeetingSetupModal
                 </button>
 
                 {showScenarioPicker && (
-                  <div className="absolute left-0 right-0 top-full z-10 mt-1 rounded-xl border border-border/40 bg-card shadow-xl overflow-hidden">
+                  <div id="meeting-scenario-options" aria-label="Scenarios" className="mt-1 max-h-[min(16rem,40dvh)] overflow-y-auto overscroll-contain rounded-xl border border-border/40 bg-card shadow-xl">
                     {BUILT_IN_SCENARIOS.map((s) => (
                       <button
                         key={s.id}

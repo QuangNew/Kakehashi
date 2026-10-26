@@ -661,6 +661,7 @@ pub fn run() {
             // == COMMANDS: models ==
             model_commands::list_local_stt_engines,
             model_commands::download_local_stt_model,
+            model_commands::get_model_downloads,
             model_commands::cancel_model_download,
             model_commands::delete_local_stt_model,
             // == COMMANDS: stealth ==

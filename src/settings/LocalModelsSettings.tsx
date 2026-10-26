@@ -74,8 +74,8 @@ export function LocalModelsSettings() {
     await saveLocalModelsConfig(config);
     await useContextStore.getState().refreshTokenBudget();
     const engines = await listLocalSTTEngines();
-    if (!engines.find((engine) => engine.engine === "whisper_cpp")?.models.some((model) => model.id === "small" && model.is_downloaded)) {
-      throw new Error("Thiếu Whisper Small: đặt ggml-small.bin trong models/whisper_cpp rồi áp dụng lại. Có thể tải bằng pnpm models:setup.");
+    if (!engines.find((engine) => engine.engine === "whisper_cpp")?.models.some((model) => model.id === "large-v3-turbo" && model.is_downloaded)) {
+      throw new Error("Thiếu Whisper Large v3 Turbo: đặt ggml-large-v3-turbo.bin trong models/whisper_cpp rồi áp dụng lại. Có thể tải bằng pnpm models:setup.");
     }
     await startLocalModel("translation");
     const devices = await listAudioDevices();
@@ -83,6 +83,8 @@ export function LocalModelsSettings() {
     const audio = applyPreset(preset, [...devices.inputs, ...devices.outputs]);
     if (direction === "ja-vi") { audio.you.language = "ja-JP"; audio.them.language = "vi-VN"; }
     await setTranslationProvider("hy-mt");
+    useConfigStore.getState().setActiveModelForEngine("whisper_cpp", "large-v3-turbo");
+    useConfigStore.getState().setActiveWhisperModel("large-v3-turbo");
     useConfigStore.getState().setMeetingAudioConfig(audio);
     const translation = useTranslationStore.getState();
     translation.setProvider("hy-mt"); translation.setBidirectional(true);
@@ -90,7 +92,7 @@ export function LocalModelsSettings() {
     const actions = useAIActionsStore.getState();
     const previous = actions.configs.customInstructions;
     if (!previous.includes("For Vietnamese–Japanese meetings:")) actions.setCustomInstructions([previous, BILINGUAL_INSTRUCTIONS].filter(Boolean).join("\n\n"));
-    setMessage("Đã bật phụ đề hai chiều. Whisper Small cần nằm trong models/whisper_cpp. Copilot được chọn riêng bên dưới hoặc trong LLM Providers.");
+    setMessage("Đã bật phụ đề hai chiều. Whisper Large v3 Turbo cần nằm trong models/whisper_cpp. Copilot được chọn riêng bên dưới hoặc trong LLM Providers.");
   }
 
   async function enableCopilot() {
@@ -144,6 +146,21 @@ export function LocalModelsSettings() {
             <h3 className="text-sm font-semibold">{TITLES[role]}</h3>
             <span className="text-xs text-muted-foreground">{status?.state ?? "stopped"}{status?.device ? ` · ${status.device}` : ""}</span>
           </div>
+          {role === "translation" && <label className="block space-y-1.5 text-xs text-muted-foreground">
+            <span>Cấu hình dịch local</span>
+            <select aria-label="Translation model profile" className={inputClass}
+              value={config.translation.file.includes("Hy-MT2-7B-") ? "quality" : config.translation.file.includes("Hy-MT2-1.8B-") ? "fast" : "custom"}
+              onChange={(e) => {
+                if (e.target.value === "custom") return;
+                const quality = e.target.value === "quality";
+                setConfig({ ...config, translation: { file: quality ? "translation/Hy-MT2-7B-Q4_K_M.gguf" : "translation/Hy-MT2-1.8B-Q4_K_M.gguf", context: 2048, gpu_layers: quality ? 22 : 99 } });
+              }}>
+              <option value="quality">Hy-MT2 7B Q4 — ưu tiên chất lượng (4,62 GB)</option>
+              <option value="fast">Hy-MT2 1.8B Q4 — ưu tiên tốc độ (1,13 GB)</option>
+              <option value="custom">File tùy chọn</option>
+            </select>
+            <p>Model 7B dùng nhiều RAM hơn. Tải bằng <code>pnpm models:setup</code>, sau đó áp dụng cấu hình.</p>
+          </label>}
           <label className="block space-y-1.5 text-xs text-muted-foreground">
             <span>File GGUF (đường dẫn đầy đủ hoặc tương đối trong thư mục models)</span>
             <div className="flex gap-2">
@@ -154,7 +171,7 @@ export function LocalModelsSettings() {
           <details className="text-xs text-muted-foreground">
             <summary className="cursor-pointer">Tài nguyên chạy model</summary>
             <div className="mt-3 grid grid-cols-2 gap-3">
-              <label>Thiết bị<select aria-label={`${role} device`} className={inputClass} value={config[role].gpu_layers ? "gpu" : "cpu"} onChange={(e) => setConfig({ ...config, [role]: { ...config[role], gpu_layers: e.target.value === "gpu" ? 99 : 0 } })}><option value="cpu">CPU</option><option value="gpu">GPU</option></select></label>
+              <label>Số lớp GPU (0 = CPU)<input aria-label={`${role} GPU layers`} className={inputClass} type="number" min={0} max={99} value={config[role].gpu_layers} onChange={(e) => setConfig({ ...config, [role]: { ...config[role], gpu_layers: Number(e.target.value) } })} /></label>
               <label>Context (tokens)<input aria-label={`${role} context`} className={inputClass} type="number" min={512} max={16384} value={config[role].context} onChange={(e) => setConfig({ ...config, [role]: { ...config[role], context: Number(e.target.value) } })} /></label>
             </div>
           </details>

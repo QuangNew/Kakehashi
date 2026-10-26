@@ -1,10 +1,10 @@
 //! Local Whisper: one inference per bounded utterance, in capture order.
 //! Continuous speech produces finals without waiting for recognition feedback.
 use async_trait::async_trait;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex, RwLock};
+use std::sync::{Arc, Condvar, Mutex, OnceLock, RwLock, Weak};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::{mpsc, oneshot};
 
@@ -17,6 +17,31 @@ use crate::audio::AudioChunk;
 // Bound memory and delay if the selected model cannot keep up. Skipped audio
 // is counted and displayed, so overload never silently masquerades as realtime.
 const MAX_PENDING_SAMPLES: usize = SAMPLE_RATE * 12;
+
+// Two audio sources share model weights, with separate decoder states/languages.
+// Serialize access to the shared GPU backend; don't duplicate a 1.6 GB model.
+struct SharedWhisper {
+    context: whisper_rs::WhisperContext,
+    inference: Mutex<()>,
+}
+static WHISPER_MODELS: OnceLock<Mutex<HashMap<String, Weak<SharedWhisper>>>> = OnceLock::new();
+
+fn shared_context(
+    model: &std::path::Path, options: whisper_rs::WhisperContextParameters<'static>,
+    backend: &str, device: Option<&str>,
+) -> Result<Arc<SharedWhisper>, String> {
+    let path = model.canonicalize().map_err(|e| e.to_string())?;
+    let metadata = path.metadata().map_err(|e| e.to_string())?;
+    let key = format!("{}:{:?}:{}:{backend}:{device:?}", path.display(), metadata.modified().ok(), metadata.len());
+    let mut pool = WHISPER_MODELS.get_or_init(|| Mutex::new(HashMap::new())).lock().map_err(|e| e.to_string())?;
+    pool.retain(|_, weak| weak.strong_count() > 0);
+    if let Some(context) = pool.get(&key).and_then(Weak::upgrade) { return Ok(context); }
+    let context = whisper_rs::WhisperContext::new_with_params(path.to_str().ok_or("Invalid model path")?, options)
+        .map_err(|e| e.to_string())?;
+    let shared = Arc::new(SharedWhisper { context, inference: Mutex::new(()) });
+    pool.insert(key, Arc::downgrade(&shared));
+    Ok(shared)
+}
 
 #[cfg(any(feature = "gpu-vulkan", test))]
 struct GpuChoice {
@@ -246,21 +271,21 @@ impl STTProvider for WhisperCppSTT {
         let stop = self.stop.clone();
         let origin_ms = self.origin_ms.clone();
         self.thread = Some(std::thread::spawn(move || {
-            use whisper_rs::{FullParams, SamplingStrategy, WhisperContext};
+            use whisper_rs::{FullParams, SamplingStrategy};
             let (options, backend, device) = context_parameters();
             {
                 let mut queue = work.0.lock().unwrap();
                 queue.performance.backend = backend.into();
-                queue.performance.device = device;
+                queue.performance.device = device.clone();
             }
-            let ctx = match WhisperContext::new_with_params(&model, options) {
+            let ctx = match shared_context(&model, options, backend, device.as_deref()) {
                 Ok(ctx) => ctx,
                 Err(e) => {
                     let _ = ready_tx.send(Err(format!("Cannot load Whisper: {e}")));
                     return;
                 }
             };
-            let mut state = match ctx.create_state() {
+            let mut state = match ctx.context.create_state() {
                 Ok(state) => state,
                 Err(e) => {
                     let _ = ready_tx.send(Err(format!("Cannot create Whisper state: {e}")));
@@ -286,6 +311,7 @@ impl STTProvider for WhisperCppSTT {
                     warmup
                         .set_abort_callback_user_data(Arc::as_ptr(&stop) as *mut std::ffi::c_void);
                 }
+                let _inference = ctx.inference.lock().unwrap();
                 if let Err(error) = state.full(warmup, &vec![0.0; SAMPLE_RATE]) {
                     let _ = ready_tx.send(Err(format!("Cannot prepare Whisper GPU: {error}")));
                     return;
@@ -340,7 +366,10 @@ impl STTProvider for WhisperCppSTT {
                         .set_abort_callback_user_data(Arc::as_ptr(&stop) as *mut std::ffi::c_void);
                 }
                 let started = Instant::now();
-                let outcome = state.full(params, &input);
+                let outcome = {
+                    let _inference = ctx.inference.lock().unwrap();
+                    state.full(params, &input)
+                };
                 let inference_ms = started.elapsed().as_millis() as u64;
                 if stop.load(Ordering::Acquire) {
                     break;
