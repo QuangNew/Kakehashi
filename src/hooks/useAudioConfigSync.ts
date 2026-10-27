@@ -12,9 +12,11 @@ import { useMeetingStore } from "../stores/meetingStore";
 import { useDevLogStore } from "../stores/devLogStore";
 import { useTranscriptStore } from "../stores/transcriptStore";
 import { useTranslationStore } from "../stores/translationStore";
+import { useApiPoolStore } from "../stores/apiPoolStore";
 import { stopCapture, startCapturePerParty } from "../lib/ipc";
 
 export function useAudioConfigSync() {
+  const credentialRevision=useApiPoolStore(s=>s.revision);
   const isRecording = useMeetingStore((s) => s.isRecording);
   const meetingAudioConfig = useConfigStore((s) => s.meetingAudioConfig);
 
@@ -30,7 +32,9 @@ export function useAudioConfigSync() {
   useEffect(() => {
     if (!isRecording || !meetingAudioConfig) return;
 
-    const configKey = JSON.stringify(meetingAudioConfig);
+    const cloud = ["deepgram","whisper_api","azure_speech","groq_whisper"];
+    const keyRevision=cloud.includes(meetingAudioConfig.you.stt_provider) || cloud.includes(meetingAudioConfig.them.stt_provider) ? credentialRevision : 0;
+    const configKey = JSON.stringify({config:meetingAudioConfig,keyRevision});
 
     // On first run (meeting just started), record the applied config
     if (appliedConfigRef.current === null) {
@@ -79,7 +83,7 @@ export function useAudioConfigSync() {
         return;
       }
 
-      const latestKey = JSON.stringify(latestConfig);
+      const latestKey = JSON.stringify({config:latestConfig,keyRevision});
 
       // If the latest config matches what's already running, skip
       if (appliedConfigRef.current === latestKey) {
@@ -111,7 +115,7 @@ export function useAudioConfigSync() {
 
         log("info", "config", "Hot-swap: starting new capture pipeline...");
         await startCapturePerParty(freshConfig.you, freshConfig.them, useTranslationStore.getState().autoTranslateEnabled, useMeetingStore.getState().audioMode);
-        const freshKey = JSON.stringify(freshConfig);
+        const freshKey = JSON.stringify({config:freshConfig,keyRevision});
         appliedConfigRef.current = freshKey;
         pendingConfigRef.current = freshKey;
         log("info", "config", "Hot-swap complete — new STT pipeline active");
@@ -125,7 +129,7 @@ export function useAudioConfigSync() {
         restartingRef.current = false;
       }
     }, 300);
-  }, [isRecording, meetingAudioConfig]);
+  }, [isRecording, meetingAudioConfig, credentialRevision]);
 
   // Reset when meeting ends
   useEffect(() => {

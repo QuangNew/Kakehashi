@@ -106,7 +106,7 @@ export function useTranslation(liveOwner = true) {
             store().setTranslating(segment.id, false);
           }
         }
-      }, 200));
+      }, 40));
     };
     const listener = onTranscriptFinal(({ segment }) => queue(segment));
     return () => {

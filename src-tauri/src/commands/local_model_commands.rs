@@ -12,6 +12,7 @@ pub async fn save_local_models_config(
     app: AppHandle,
     config: LocalModelsConfig,
 ) -> Result<(), String> {
+    let _preparation = crate::commands::preparation_commands::GATE.lock().await;
     let state = app.state::<AppState>();
     if state
         .meeting_active

@@ -134,10 +134,11 @@ describe("configStore: Claude CLI config", () => {
     const store = await freshStore();
     store.setState({ llmProvider: "ollama", llmModel: "llama3.2", lastModelByProvider: { openai: "gpt-4o" } });
     invoke.mockImplementation(async (cmd: string) => {
-      if (cmd === "set_active_model") throw new Error("unknown model");
+      if (cmd === "set_llm_provider") throw new Error("unknown model");
       return null;
     });
     await expect(store.getState().activateLLMProvider("openai")).rejects.toThrow(/unknown model/);
+    expect(store.getState().llmProvider).toBe("ollama");
     expect(store.getState().llmModel).toBe("llama3.2");
     expect(saved.get("llmModel")).toBeUndefined();
     invoke.mockImplementation(async () => null);

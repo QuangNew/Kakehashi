@@ -7,6 +7,18 @@ use crate::llm::provider::LLMProvider;
 use crate::llm::{create_provider, LLMRouter, ProviderConfig};
 use crate::state::AppState;
 
+pub(crate) fn pooled_config(mut config: ProviderConfig, state: &AppState) -> Result<ProviderConfig,String> {
+    let kind = crate::llm::ProviderType::from_str(&config.provider_type).map_err(|e|e.to_string())?;
+    if kind.requires_api_key() && config.api_key.is_none() {
+        config.api_key = state.credentials.as_ref().ok_or("Credentials are not initialized")?.lock().map_err(|e|e.to_string())?.get_key(&config.provider_type)?;
+    }
+    if config.provider_type == "custom" && config.auth_type.as_deref().is_some_and(|s|s!="none") && config.auth_value.is_none() {
+        config.auth_value = state.credentials.as_ref().ok_or("Credentials are not initialized")?.lock().map_err(|e|e.to_string())?.get_key("custom")?;
+        if config.auth_value.is_none() { return Err("Select a Custom credential in API Pool".into()); }
+    }
+    Ok(config)
+}
+
 /// Resolve the provider for a read-only operation (model listing, connection test).
 ///
 /// A JSON `ProviderConfig` builds a temporary provider and never touches the
@@ -14,8 +26,10 @@ use crate::state::AppState;
 fn resolve_provider(
     llm: &std::sync::Mutex<LLMRouter>,
     provider: &str,
+    state: &AppState,
 ) -> Result<Arc<TokioMutex<Box<dyn LLMProvider>>>, String> {
     if let Ok(config) = serde_json::from_str::<ProviderConfig>(provider) {
+        let config = pooled_config(config,state)?;
         let temp =
             create_provider(&config).map_err(|e| format!("Failed to create provider: {}", e))?;
         return Ok(Arc::new(TokioMutex::new(temp)));
@@ -50,6 +64,7 @@ pub async fn set_llm_provider(
             }
         }
     };
+    let config = pooled_config(config,&state)?;
 
     let llm = state
         .llm
@@ -71,9 +86,7 @@ pub async fn set_llm_provider(
         .set_provider(config)
         .map_err(|e| format!("Failed to set provider: {}", e))?;
 
-    if let Some(model) = model_id {
-        router.set_active_model(model);
-    }
+    router.set_active_model(model_id.unwrap_or_default());
     log::info!("Copilot provider set to: {}", provider_type);
     Ok(())
 }
@@ -86,7 +99,7 @@ pub async fn list_models(provider: String, state: State<'_, AppState>) -> Result
         .ok_or_else(|| "LLM router not initialized".to_string())?;
 
     // A JSON config uses a temporary provider; the active provider is never switched.
-    let provider_arc = resolve_provider(llm, &provider)?;
+    let provider_arc = resolve_provider(llm, &provider, &state)?;
 
     let provider_guard = provider_arc.lock().await;
     let models = provider_guard
@@ -134,7 +147,7 @@ pub async fn test_llm_connection(
         .ok_or_else(|| "LLM router not initialized".to_string())?;
 
     // A JSON config uses a temporary provider; the active provider is never switched.
-    let provider_arc = resolve_provider(llm, &provider)?;
+    let provider_arc = resolve_provider(llm, &provider, &state)?;
 
     let provider_guard = provider_arc.lock().await;
     provider_guard

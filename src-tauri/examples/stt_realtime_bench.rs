@@ -40,6 +40,34 @@ async fn main() -> anyhow::Result<()> {
         .collect::<Result<_, _>>()?;
     let model = args.iter().find_map(|s| s.strip_prefix("--model=")).map(PathBuf::from)
         .unwrap_or_else(|| root.join("models/whisper_cpp/ggml-large-v3-turbo.bin"));
+    // Compare first load and retained models in one process, using the exact
+    // preparation path used by the desktop. This never captures or saves audio.
+    if args.iter().any(|s|s=="--startup-only") {
+        let runtime=nexq_lib::local_runtime::shared();
+        runtime.initialize(args.iter().find_map(|s|s.strip_prefix("--models-config=")).map(PathBuf::from)
+            .unwrap_or_else(||root.join(".cache/local-model-smoke/local-models.json"))).map_err(anyhow::Error::msg)?;
+        let translator=HyMtTranslator::new(runtime.clone());
+        for attempt in 1..=3 {
+            let started=Instant::now();
+            nexq_lib::translation::hy_mt::prepare_local_translation(&translator).await?;
+            let translation_ms=started.elapsed().as_millis();
+            let stt_start=Instant::now();
+            let mut providers=Vec::new();
+            for language in ["ja","vi"] {
+                let mut provider=WhisperCppSTT::new(model.clone(),Arc::new(RwLock::new(DualPassConfig::default())));
+                provider.set_language(language);
+                let (tx,_rx)=mpsc::channel(16);
+                provider.start_stream(tx).await.map_err(|e|anyhow::anyhow!(e.to_string()))?;
+                providers.push(provider);
+            }
+            let whisper_ms=stt_start.elapsed().as_millis();
+            println!("{}",serde_json::json!({"kind":"startup","attempt":attempt,"translation_ms":translation_ms,"whisper_ms":whisper_ms,"total_ms":started.elapsed().as_millis()}));
+            for mut provider in providers {provider.stop_stream().await.map_err(|e|anyhow::anyhow!(e.to_string()))?;}
+        }
+        runtime.stop_all().await;
+        nexq_lib::stt::whisper_cpp::release_cached_models();
+        return Ok(());
+    }
     if args.iter().any(|s| s == "--raw") {
         use whisper_rs::{FullParams, SamplingStrategy, WhisperContext};
         let (options, backend, device) = nexq_lib::stt::whisper_cpp::context_parameters();
@@ -174,8 +202,8 @@ async fn main() -> anyhow::Result<()> {
                 serde_json::json!({"kind":"transcript", "final":result.is_final, "segment":result.segment_id, "chars":result.text.chars().count(), "text":include_text.then_some(&result.text), "elapsed_ms":start.elapsed().as_millis(), "audio_start_ms":result.timestamp_ms, "duration_ms":result.duration_ms, "lag_ms":end.map(|end| (start.elapsed().as_millis() as u64).saturating_sub(end))})
             );
             if translate && result.is_final {
-                // Match the live hook's 200 ms correction debounce.
-                tokio::time::sleep(Duration::from_millis(200)).await;
+                // Match the live hook's 40 ms correction debounce.
+                tokio::time::sleep(Duration::from_millis(40)).await;
                 let _ = translation_tx
                     .send((
                         result.text,

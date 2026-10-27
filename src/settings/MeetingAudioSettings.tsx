@@ -1,3 +1,5 @@
+import { selectedCredential } from "../lib/apiPool";
+import { useApiPoolStore } from "../stores/apiPoolStore";
 // Unified "Meeting Audio" settings tab — per-party device + STT configuration.
 // Two-panel layout: YOU (left) | THEM (right), with monitor + sessions below.
 
@@ -883,6 +885,7 @@ function ProviderSelect({
   otherPartyLabel: string;
   onChange: (val: STTProviderType) => void;
 }) {
+  const pool=useApiPoolStore(s=>s.snapshot);
   const [open, setOpen] = useState(false);
   const [stealTarget, setStealTarget] = useState<STTProviderType | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -910,7 +913,7 @@ function ProviderSelect({
     if (opt.inputOnly && !isInput) return false;
     if (opt.requiresDownload) return isLocalEngineReady(opt.requiresDownload);
     // If API key status hasn't loaded yet, assume available to prevent false fallbacks
-    if (opt.requiresKey) return apiKeyStatus[opt.value] ?? true;
+    if (opt.requiresKey) return !!selectedCredential(pool,"stt",opt.value);
     return true;
   }
 
@@ -987,19 +990,10 @@ function ProviderSelect({
       }
       return; // Skip fallback on initial load
     }
-    const currentOpt = STT_OPTIONS.find((o) => o.value === value);
-    if (currentOpt && !isAvailable(currentOpt)) {
-      const fallback = STT_OPTIONS.find(
-        (o) => o.value !== value && isAvailable(o) && !isExclusiveProvider(o.value)
-      );
-      if (fallback) {
-        onChange(fallback.value);
-      }
-    }
   }, [localEngines, apiKeyStatus]);
 
   const localOptions = STT_OPTIONS.filter((o) => !o.isCloud && isAvailable(o));
-  const cloudOptions = STT_OPTIONS.filter((o) => o.isCloud && isAvailable(o));
+  const cloudOptions = STT_OPTIONS.filter((o) => o.isCloud);
   const hasAny = localOptions.length > 0 || cloudOptions.length > 0;
 
   const current = STT_OPTIONS.find((o) => o.value === value);
@@ -1023,7 +1017,7 @@ function ProviderSelect({
       </button>
 
       {open && (
-        <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-xl border border-border/50 bg-popover shadow-xl">
+        <div className="relative z-50 mt-1 max-h-[min(24rem,50dvh)] overflow-y-auto overscroll-contain rounded-xl border border-border/50 bg-popover shadow-xl">
           {localOptions.length > 0 && (
             <div>
               <div className="flex items-center gap-1.5 border-b border-border/20 bg-muted/30 px-3 py-1.5">
@@ -1085,6 +1079,7 @@ function ProviderSelect({
                     key={opt.value}
                     type="button"
                     onClick={() => {
+                      if (!isAvailable(opt)) { useApiPoolStore.getState().askForKey(opt.value);return; }
                       if (locked) {
                         setStealTarget(opt.value);
                       } else {
@@ -1098,11 +1093,11 @@ function ProviderSelect({
                       value === opt.value ? "bg-primary/5 text-primary" : "text-foreground"
                     }`}
                   >
-                    <span className={`shrink-0 ${value === opt.value ? "text-primary" : "text-blue-500"}`}>
+                    <span className={`shrink-0 ${isAvailable(opt) ? "text-success" : "text-destructive"}`}>
                       {opt.icon}
                     </span>
                     <span className="flex-1 text-left">
-                      {opt.label}
+                      {opt.label}<span className={`block text-meta ${isAvailable(opt) ? "text-success" : "text-destructive"}`}>{isAvailable(opt) ? "Key sẵn sàng" : "Thiếu key · mở API Pool"}</span>
                       {locked && (
                         <span className="block text-meta text-muted-foreground/50">In use by {otherPartyLabel}</span>
                       )}

@@ -1,14 +1,14 @@
+import { ApiCredentialPicker } from "../components/ApiCredentialPicker";
+import { isChatModel } from "../lib/chatModels";
+import { selectedCredential } from "../lib/apiPool";
+import { useApiPoolStore } from "../stores/apiPoolStore";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useConfigStore } from "../stores/configStore";
 import { showToast } from "../stores/toastStore";
 import {
-  getLLMProviders,
   listModels,
   setActiveModel,
   testLLMConnection,
-  storeApiKey,
-  getApiKey,
-  hasApiKey,
   listOpenRouterModels,
 } from "../lib/ipc";
 import type { CustomLlmAuthType, LLMProviderType, ModelInfo, OpenRouterModel } from "../lib/types";
@@ -19,8 +19,6 @@ import {
   CheckCircle,
   XCircle,
   Loader2,
-  Eye,
-  EyeOff,
   RefreshCw,
   Wifi,
   Server,
@@ -61,7 +59,7 @@ const EMBEDDING_ONLY_PATTERNS = [
 
 function filterChatModels(models: ModelInfo[]): ModelInfo[] {
   return models.filter(
-    (m) => !EMBEDDING_ONLY_PATTERNS.some((p) => m.id.toLowerCase().includes(p))
+    (m) => isChatModel(m.id)
   );
 }
 
@@ -80,7 +78,9 @@ function getBadgeState(
 ): BadgeState {
   const info = PROVIDER_DISPLAY[providerType];
 
-  // Verified providers (test passed) → Ready
+  if (info.requiresKey) return keyExists ? {text:"Đã lưu key",variant:"has-key"} : {text:"No Key",variant:"no-key"};
+
+  // Local / subscription verification
   if (verifiedProviders.includes(providerType)) {
     return { text: "Ready", variant: "ready" };
   }
@@ -104,7 +104,7 @@ function getBadgeState(
 
 const BADGE_STYLES: Record<BadgeVariant, string> = {
   "ready": "bg-success/10 text-success border-success/20",
-  "has-key": "bg-info/10 text-info border-info/20",
+  "has-key": "bg-success/10 text-success border-success/20",
   "no-key": "bg-destructive/10 text-destructive border-destructive/20",
   "local": "bg-info/10 text-info border-info/20",
   "not-configured": "bg-muted text-muted-foreground border-border/30",
@@ -112,7 +112,7 @@ const BADGE_STYLES: Record<BadgeVariant, string> = {
 
 const DOT_STYLES: Record<BadgeVariant, string> = {
   "ready": "bg-success",
-  "has-key": "bg-info",
+  "has-key": "bg-success",
   "no-key": "bg-destructive",
   "local": "bg-info",
   "not-configured": "bg-muted-foreground/30",
@@ -121,6 +121,8 @@ const DOT_STYLES: Record<BadgeVariant, string> = {
 // ══════════════════════════════════════════════════════════════
 
 export function LLMSettings() {
+  const pool = useApiPoolStore(s=>s.snapshot);
+  const poolRevision = useApiPoolStore(s=>s.revision);
   const llmProvider = useConfigStore((s) => s.llmProvider);
   const llmModel = useConfigStore((s) => s.llmModel);
   const setConfigModel = useConfigStore((s) => s.setLLMModel);
@@ -135,13 +137,10 @@ export function LLMSettings() {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [openRouterModels, setOpenRouterModels] = useState<OpenRouterModel[]>([]);
   const [selectedModel, setSelectedModel] = useState(llmModel);
-  const [apiKey, setApiKeyValue] = useState("");
-  const [showApiKey, setShowApiKey] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("idle");
   const [connectionMessage, setConnectionMessage] = useState("");
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState("");
-  const [keyStatusMap, setKeyStatusMap] = useState<Record<string, boolean>>({});
 
   // The active provider changed elsewhere (the footer, in this or the other
   // window): show that provider, so Settings never offers to "activate" the
@@ -164,59 +163,17 @@ export function LLMSettings() {
   const setCustomLlmConfig = useConfigStore((s) => s.setCustomLlmConfig);
   const setCustomBaseUrl = (url: string) => setCustomLlmConfig(url, useConfigStore.getState().customLlmAuthType);
   const setCustomAuthType = (authType: CustomLlmAuthType) => setCustomLlmConfig(useConfigStore.getState().customLlmBaseUrl, authType);
-  const [customAuthValue, setCustomAuthValue] = useState("");
 
-  // Check which providers have stored API keys (for badge display)
-  useEffect(() => {
-    async function checkAllKeys() {
-      const cloudProviders = ["openai", "anthropic", "groq", "gemini", "openrouter"];
-      const status: Record<string, boolean> = {};
-      for (const p of cloudProviders) {
-        try { status[p] = await hasApiKey(p); } catch { status[p] = false; }
-      }
-      setKeyStatusMap(status);
-    }
-    checkAllKeys();
-  }, []);
-
-  // Load API key when provider changes
-  useEffect(() => {
-    const info = PROVIDER_DISPLAY[selectedProvider];
-    if (info?.requiresKey) {
-      getApiKey(selectedProvider)
-        .then((key) => setApiKeyValue(key || ""))
-        .catch(() => setApiKeyValue(""));
-    } else {
-      setApiKeyValue("");
-    }
-    setConnectionStatus("idle");
-    setConnectionMessage("");
-    setModels([]);
-    setOpenRouterModels([]);
-    setModelsError("");
-  }, [selectedProvider]);
-
-  useEffect(() => {
-    if (selectedProvider !== "custom") return;
-    let disposed = false;
-    getApiKey("custom").then((token) => { if (!disposed) setCustomAuthValue(token || ""); })
-      .catch(() => { if (!disposed) setCustomAuthValue(""); });
-    return () => { disposed = true; };
-  }, [selectedProvider]);
-
+  useEffect(()=>{setConnectionStatus("idle");setConnectionMessage("");setModelsError("");setModels([]);setOpenRouterModels([]);},[selectedProvider,poolRevision]);
   // Build the provider config JSON for backend calls
   const buildProviderConfig = useCallback(() => {
     const config: Record<string, unknown> = { provider_type: selectedProvider };
-    if (apiKey) config.api_key = apiKey;
     if (selectedProvider === "custom") {
       if (customBaseUrl) config.base_url = customBaseUrl;
-      if (customAuthType !== "none") {
-        config.auth_type = customAuthType;
-        config.auth_value = customAuthValue;
-      }
+      config.auth_type = customAuthType;
     }
     return JSON.stringify(config);
-  }, [selectedProvider, apiKey, customBaseUrl, customAuthType, customAuthValue]);
+  }, [selectedProvider, customBaseUrl, customAuthType]);
 
   const handleProviderChange = (provider: LLMProviderType) => {
     setSelectedProvider(provider);
@@ -228,22 +185,11 @@ export function LLMSettings() {
     setModelsError("");
   };
 
-  const handleSaveApiKey = async () => {
-    if (!apiKey) return;
-    try {
-      await storeApiKey(selectedProvider, apiKey);
-      setKeyStatusMap((prev) => ({ ...prev, [selectedProvider]: true }));
-    } catch {
-      showToast("Failed to save API key", "error");
-    }
-  };
-
   // Test connection — on success, add to verifiedCloudProviders
   const handleTestConnection = async () => {
     setConnectionStatus("testing");
     setConnectionMessage("");
     try {
-      if (apiKey) await storeApiKey(selectedProvider, apiKey).catch(() => {});
       const configJson = buildProviderConfig();
       const success = await testLLMConnection(configJson);
       if (success) {
@@ -253,7 +199,6 @@ export function LLMSettings() {
         if (!verifiedCloudProviders.includes(selectedProvider)) {
           setVerifiedCloudProviders([...verifiedCloudProviders, selectedProvider]);
         }
-        setKeyStatusMap((prev) => ({ ...prev, [selectedProvider]: true }));
       } else {
         setConnectionStatus("error");
         setConnectionMessage("Connection failed");
@@ -270,7 +215,6 @@ export function LLMSettings() {
     setModels([]);
     // Don't clear openRouterModels here — keep showing existing catalog during refresh
     try {
-      if (apiKey) await storeApiKey(selectedProvider, apiKey).catch(() => {});
 
       if (selectedProvider === "openrouter") {
         // Browsing only: the key is already stored, so this never touches the active provider
@@ -301,13 +245,12 @@ export function LLMSettings() {
     }
   };
 
-  const handleModelSelect = async (modelId: string) => {
-    setSelectedModel(modelId);
-    // Only the active provider's model is applied now; for a browsed provider
-    // the selection is applied by "Set as Active Provider".
-    if (selectedProvider !== llmProvider) return;
-    setConfigModel(modelId, selectedProvider);
-    try { await setActiveModel(selectedProvider, modelId); } catch {}
+  const handleModelSelect = async (modelId:string) => {
+    try {
+      if(selectedProvider === llmProvider){await setActiveModel(selectedProvider,modelId);setConfigModel(modelId,selectedProvider);}
+      else useConfigStore.getState().rememberModel(selectedProvider,modelId);
+      setSelectedModel(modelId);
+    } catch(error){setModelsError(String(error));}
   };
 
   const info = PROVIDER_DISPLAY[selectedProvider];
@@ -341,6 +284,7 @@ export function LLMSettings() {
       </div>
 
       {/* Subscription (local CLI) providers */}
+      {llmModel && !isChatModel(llmModel) && <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">Copilot đang lưu model “{llmModel}”, thuộc nhóm nhận dạng âm thanh hoặc embedding. Hãy Load Models rồi chọn model chat để nhận gợi ý cuộc họp.</p>}
       <ClaudeCliSettings
         selected={isClaudeCli}
         active={llmProvider === "claude_cli"}
@@ -355,11 +299,13 @@ export function LLMSettings() {
             const display = PROVIDER_DISPLAY[pType];
             const isSelected = selectedProvider === pType;
             const isActive = llmProvider === pType;
-            const badge = getBadgeState(pType, verifiedCloudProviders, keyStatusMap[pType] ?? false);
+            const badge = PROVIDER_DISPLAY[pType].requiresKey
+              ? { text: selectedCredential(pool,"copilot",pType) ? "Key sẵn sàng" : "Thiếu key", variant: selectedCredential(pool,"copilot",pType) ? "ready" as const : "no-key" as const }
+              : getBadgeState(pType, verifiedCloudProviders, false);
             return (
               <button
                 key={pType}
-                onClick={() => handleProviderChange(pType)}
+                onClick={() => PROVIDER_DISPLAY[pType].requiresKey && !selectedCredential(pool,"copilot",pType) ? useApiPoolStore.getState().askForKey(pType) : handleProviderChange(pType)}
                 aria-pressed={isSelected}
                 className={`relative flex flex-col items-start rounded-xl border p-3 text-left transition-all duration-150 cursor-pointer ${
                   isSelected
@@ -401,36 +347,7 @@ export function LLMSettings() {
       </div>
 
       {/* API Key Input (for cloud providers) */}
-      {requiresApiKey && (
-        <div className="rounded-xl border border-border/30 bg-card/50 p-5">
-          <h3 className="mb-3 text-sm font-semibold text-primary/80">API Key</h3>
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <input
-                type={showApiKey ? "text" : "password"}
-                value={apiKey}
-                onChange={(e) => setApiKeyValue(e.target.value)}
-                onBlur={handleSaveApiKey}
-                placeholder={`Enter ${PROVIDER_DISPLAY[selectedProvider]?.label || selectedProvider} API key`}
-                maxLength={256}
-                className="w-full rounded-lg border border-border/50 bg-background px-3.5 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
-              />
-              <button
-                onClick={() => setShowApiKey(!showApiKey)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground cursor-pointer"
-                title={showApiKey ? "Hide" : "Show"}
-                aria-label={showApiKey ? "Hide API key" : "Show API key"}
-                aria-pressed={showApiKey}
-              >
-                {showApiKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-              </button>
-            </div>
-          </div>
-          <p className="mt-1.5 text-xs text-muted-foreground">
-            Stored securely in your system keychain
-          </p>
-        </div>
-      )}
+      {requiresApiKey && <ApiCredentialPicker usage="copilot" provider={selectedProvider} />}
 
       {/* Custom Provider Config */}
       {isCustom && (
@@ -460,22 +377,8 @@ export function LLMSettings() {
                 <option value="api_key">API Key Header</option>
               </select>
             </div>
-            {customAuthType !== "none" && (
-              <div className="flex-1">
-                <label className="mb-1.5 block text-xs font-medium text-foreground">
-                  {customAuthType === "bearer" ? "Token" : "API Key"}
-                </label>
-                <input
-                  type="password"
-                  value={customAuthValue}
-                  onChange={(e) => setCustomAuthValue(e.target.value)}
-                  onBlur={() => { storeApiKey("custom", customAuthValue).catch((error) => showToast(`Couldn't save the custom provider token: ${String(error)}`, "error")); }}
-                  placeholder={customAuthType === "bearer" ? "Bearer token..." : "API key..."}
-                  maxLength={256}
-                  className="w-full rounded-lg border border-border/50 bg-background px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
-                />
-              </div>
-            )}
+            {customAuthType !== "none" && <ApiCredentialPicker usage="copilot" provider="custom" />}
+
           </div>
         </div>
       )}
@@ -499,7 +402,7 @@ export function LLMSettings() {
           <div className="flex items-center gap-2">
             <button
               onClick={handleTestConnection}
-              disabled={connectionStatus === "testing" || (requiresApiKey && !apiKey) || (isCustom && !customBaseUrl)}
+              disabled={connectionStatus === "testing" || (requiresApiKey && !selectedCredential(pool,"copilot",selectedProvider)) || (isCustom && !customBaseUrl)}
               className="inline-flex items-center gap-1.5 rounded-lg border border-border/50 bg-background px-4 py-2 text-sm font-medium text-foreground transition-all duration-150 hover:bg-accent hover:-translate-y-px active:translate-y-px active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:active:scale-100 cursor-pointer"
             >
               {connectionStatus === "testing" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
@@ -507,7 +410,7 @@ export function LLMSettings() {
             </button>
             <button
               onClick={handleLoadModels}
-              disabled={modelsLoading || (requiresApiKey && !apiKey) || (isCustom && !customBaseUrl)}
+              disabled={modelsLoading || (requiresApiKey && !selectedCredential(pool,"copilot",selectedProvider)) || (isCustom && !customBaseUrl)}
               className="inline-flex items-center gap-1.5 rounded-lg border border-border/50 bg-background px-4 py-2 text-sm font-medium text-foreground transition-all duration-150 hover:bg-accent hover:-translate-y-px active:translate-y-px active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:active:scale-100 cursor-pointer"
             >
               {modelsLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
@@ -564,11 +467,6 @@ export function LLMSettings() {
           disabled={claudeUnusable}
           onClick={async () => {
             try {
-              if (selectedProvider === "custom" && customAuthType !== "none") {
-                await storeApiKey("custom", customAuthValue);
-              } else if (apiKey) {
-                await storeApiKey(selectedProvider, apiKey).catch(() => {});
-              }
               // Same path as the footer. Without a pick, the model last used
               // with the provider; Claude takes its Fast model.
               await activateLLMProvider(selectedProvider, {

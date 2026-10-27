@@ -5,6 +5,8 @@
 - Microphone và system audio có ngôn ngữ riêng; mặc định Whisper Large v3 Turbo local dùng GPU Vulkan. Có thêm các provider STT cloud, browser, Windows Speech và ONNX/Sherpa/Parakeet.
 - AI dịch: Hy-MT2 7B trong folder, Groq API hoặc Google AI Studio / Gemini API độc lập; giữ Microsoft/Google Cloud Translation, DeepL, OPUS-MT và tùy chọn dùng chung copilot.
 - AI copilot chọn provider/model/key riêng; hỗ trợ local GGUF, Ollama, LM Studio, Claude subscription/CLI, Groq, Gemini, OpenAI, Anthropic, OpenRouter và Custom API.
+- API Pool lưu key một lần trong Windows Credential Manager; chọn dùng chung hoặc dùng riêng cho STT, AI dịch và copilot. Cấu hình và bản nháp được lưu cho lần sau.
+- Chuẩn bị model local trước khi vào họp và dùng lại trọng số giữa các cuộc họp; có nút giải phóng RAM/VRAM trong Local Models.
 - Overlay song ngữ, gợi ý trả lời, Meeting/Interview/Lecture/Webinar/Oral Exam, chế độ online/in-person, prompt tùy chỉnh, tài liệu/RAG local, lịch sử, ghi âm và nghe lại, stealth/hotkeys.
 
 **Tiến độ triển khai:** [docs/PROGRESS.vi.md](docs/PROGRESS.vi.md).
@@ -43,6 +45,7 @@ pnpm models:smoke   # Kiểm thử các model thật đang có
 - [Cấu trúc và khả năng hiện tại](docs/reports/repository-report.vi.md)
 - [Hiệu năng realtime và giới hạn phép đo](docs/reports/realtime-performance.vi.md)
 - [Nâng model Turbo/7B và sửa giao diện](docs/reports/quality-upgrade.vi.md)
+- [API Pool, lưu cấu hình và thời gian vào họp](docs/reports/api-pool-startup.vi.md)
 - [Bản sửa upstream đã chọn](docs/reports/upstream-sync.vi.md), [hướng dẫn NexQ tham chiếu](docs/reports/upstream-user-guide/README.md)
 
 Dữ liệu ứng dụng dùng `%APPDATA%/com.tvnjp.app`. File tài liệu/ghi âm có tham chiếu từ đường dẫn NexQ cũ được sao chép và kiểm tra trước khi cập nhật DB; bản gốc và backup DB được giữ. Key API lưu qua credential manager của Windows.

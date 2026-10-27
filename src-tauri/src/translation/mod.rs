@@ -113,6 +113,7 @@ pub struct ConnectionStatus {
 
 #[async_trait]
 pub trait TranslationProvider: Send + Sync {
+    async fn prepare(&self) -> Result<(), TranslationError> { Ok(()) }
     fn provider_name(&self) -> &str;
     fn provider_type(&self) -> TranslationProviderType;
     fn is_local(&self) -> bool;
@@ -203,6 +204,7 @@ impl TranslationCache {
 // ── Router ──
 
 pub struct TranslationRouter {
+    active_api_model: Option<String>,
     app_handle: Option<tauri::AppHandle>,
     local_runtime: Option<Arc<crate::local_runtime::LocalRuntime>>,
     active_provider: Option<Arc<dyn TranslationProvider>>,
@@ -225,6 +227,7 @@ pub struct TranslationRouter {
 impl TranslationRouter {
     pub fn new() -> Self {
         Self {
+            active_api_model: None,
             app_handle: None,
             local_runtime: None,
             active_provider: None,
@@ -245,6 +248,8 @@ impl TranslationRouter {
     pub fn active_type(&self) -> Option<&TranslationProviderType> {
         self.active_type.as_ref()
     }
+    pub fn active_api_model(&self) -> Option<&str> { self.active_api_model.as_deref() }
+    pub fn invalidate_credentials(&mut self) { self.active_provider = None; self.clear_cache(); }
 
     pub fn set_app_handle(&mut self, app: tauri::AppHandle) { self.app_handle = Some(app); }
 
@@ -344,8 +349,9 @@ impl TranslationRouter {
         model: String,
         key: String,
     ) -> Result<(), TranslationError> {
-        let provider = api::ApiTranslator::new(kind.clone(), model, key)?;
+        let provider = api::ApiTranslator::new(kind.clone(), model.clone(), key)?;
         self.activate(kind, Arc::new(provider));
+        self.active_api_model = Some(model);
         Ok(())
     }
 

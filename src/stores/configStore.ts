@@ -1,3 +1,5 @@
+import { getSettingsStore, writeSetting } from "../lib/persistedSettings";
+import { isChatModel } from "../lib/chatModels";
 import { create } from "zustand";
 import { load, Store } from "@tauri-apps/plugin-store";
 import { useContextStore } from "./contextStore";
@@ -99,12 +101,7 @@ const DEFAULT_HOTKEYS: HotkeyConfig = {
 // Singleton store instance, lazily initialized
 let storeInstance: Store | null = null;
 
-async function getStore(): Promise<Store> {
-  if (!storeInstance) {
-    storeInstance = await load(STORE_FILE, { autoSave: true, defaults: {} });
-  }
-  return storeInstance;
-}
+async function getStore(): Promise<Store> { return getSettingsStore("config.json"); }
 
 /**
  * Persist a key-value pair to the Tauri plugin-store.
@@ -118,33 +115,23 @@ function normalizeContextScope(value: Partial<ContextScopeSetting> | null | unde
 
 /** Restore the saved endpoint and credentials when activating a provider. */
 async function storedProviderConfig(provider: LLMProviderType): Promise<string> {
-  const { getApiKey } = await import("../lib/ipc");
   const config: Record<string, unknown> = { provider_type: provider };
   if (provider === "custom") {
     const { customLlmBaseUrl, customLlmAuthType } = useConfigStore.getState();
     if (customLlmBaseUrl) config.base_url = customLlmBaseUrl;
-    if (customLlmAuthType !== "none") {
-      config.auth_type = customLlmAuthType;
-      const token = await getApiKey("custom").catch(() => null);
-      if (token) config.auth_value = token;
-    }
-  } else if (provider !== "claude_cli") {
-    const key = await getApiKey(provider).catch(() => null);
-    if (key) config.api_key = key;
+    config.auth_type = customLlmAuthType;
   }
+
   return JSON.stringify(config);
 }
 
 async function persistValue(key: string, value: unknown): Promise<void> {
-  try {
-    const store = await getStore();
-    await store.set(key, value);
-  } catch (err) {
-    console.error(`[configStore] Failed to persist "${key}":`, err);
-  }
+  await writeSetting("config.json",key,value).catch(error=>console.error("Could not persist settings",error));
 }
 
 interface ConfigState {
+  preloadLocalModels: boolean;
+  setPreloadLocalModels: (enabled:boolean)=>void;
   // Appearance
   theme: ThemeMode;
 
@@ -370,6 +357,8 @@ function followFallback(provider: string): void {
 }
 
 export const useConfigStore = create<ConfigState>((set) => ({
+  preloadLocalModels: false,
+  setPreloadLocalModels: enabled=>{set({preloadLocalModels:enabled});void persistValue("preloadLocalModels",enabled);},
   theme: "dark",
   sttProvider: "whisper_cpp",
   sttLanguage: "vi-VN",
@@ -483,28 +472,13 @@ export const useConfigStore = create<ConfigState>((set) => ({
     const before = useConfigStore.getState();
     let providerConfig = options.providerConfig;
     if (providerConfig == null) providerConfig = await storedProviderConfig(provider);
-    await ipc.setLLMProvider(providerConfig);
+    const model = provider === "claude_cli" ? before.claudeCliConfig.fast_model : options.model || before.lastModelByProvider[provider] || "";
+    if(model && !isChatModel(model))throw new Error("Model này không hỗ trợ copilot chat. Hãy chọn model chat trong LLM Providers.");
+    // Provider and model are one backend transaction. Commit UI only on success.
+    await ipc.setLLMProvider(providerConfig, model || undefined);
     before.setLLMProvider(provider);
+    before.setLLMModel(model,provider);
     void useContextStore.getState().refreshTokenBudget();
-    // An activated provider counts as verified (the "Ready" badge in Settings).
-    const verified = useConfigStore.getState().verifiedCloudProviders;
-    if (!verified.includes(provider)) useConfigStore.getState().setVerifiedCloudProviders([...verified, provider]);
-    // Claude ignores the model (Fast / Deep come from its settings) but the
-    // backend needs one: its Fast model fills the slot.
-    const model =
-      provider === "claude_cli"
-        ? useConfigStore.getState().claudeCliConfig.fast_model
-        : options.model || before.lastModelByProvider[provider] || "";
-    // Without a model, Claude's Fast model must not carry over to the new provider.
-    if (model || before.llmProvider === "claude_cli") {
-      try {
-        await ipc.setActiveModel(provider, model);
-      } catch (e) {
-        // The backend kept its previous model: don't record one it refused.
-        throw new Error(`model ${model || "(none)"} not applied: ${e instanceof Error ? e.message : String(e)}`);
-      }
-      useConfigStore.getState().setLLMModel(model, provider);
-    }
   },
   rememberModel: (provider, model) => {
     if (!model || provider === "claude_cli") return;
@@ -890,6 +864,7 @@ export const useConfigStore = create<ConfigState>((set) => ({
       const firstRunCompleted = await store.get<boolean>("firstRunCompleted");
       const hotkeys = await store.get<HotkeyConfig>("hotkeys");
       const activeWhisperModel = await store.get<string | null>("activeWhisperModel");
+      const preloadLocalModels = await store.get<boolean>("preloadLocalModels");
       const whisperDualPass = await store.get<WhisperDualPassConfig>("whisperDualPass");
       const contextStrategy = await store.get<ContextStrategy>("contextStrategy");
       const verifiedCloudProviders = await store.get<string[]>("verifiedCloudProviders");
@@ -1057,6 +1032,7 @@ export const useConfigStore = create<ConfigState>((set) => ({
         ...(firstRunCompleted != null && { firstRunCompleted }),
         ...(hotkeys != null && { hotkeys }),
         ...(activeWhisperModel !== undefined && { activeWhisperModel }),
+        preloadLocalModels: preloadLocalModels ?? false,
         ...(activeModelPerEngine != null && { activeModelPerEngine }),
         ...(whisperDualPass != null && { whisperDualPass }),
         ...(contextStrategy != null && { contextStrategy }),
@@ -1122,6 +1098,7 @@ export const useConfigStore = create<ConfigState>((set) => ({
 
       // Set up cross-window sync: when another window changes the store,
       // update this window's Zustand state automatically.
+      store.onKeyChange<boolean>("preloadLocalModels",val=>{if(val!=null)set({preloadLocalModels:val});});
       store.onKeyChange<MeetingAudioConfig>("meetingAudioConfig", (val) => {
         if (val != null) set({ meetingAudioConfig: val });
       });

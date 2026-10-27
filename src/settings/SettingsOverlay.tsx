@@ -1,3 +1,5 @@
+import { ApiPoolSettings } from "./ApiPoolSettings";
+import { SettingsSaveStatus } from "../components/SettingsSaveStatus";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useMeetingStore } from "../stores/meetingStore";
 import { useConfigStore } from "../stores/configStore";
@@ -32,7 +34,7 @@ import { TranslationSettings } from "./TranslationSettings";
 import { LocalModelsSettings } from "./LocalModelsSettings";
 import { Sparkles } from "lucide-react";
 
-type SettingsTab = "meeting_audio" | "local_models" | "llm" | "stt" | "translation" | "ai_actions" | "context_strategy" | "scenarios" | "noise_presets" | "confidence" | "hotkeys" | "general" | "about";
+type SettingsTab = "api_pool" | "meeting_audio" | "local_models" | "llm" | "stt" | "translation" | "ai_actions" | "context_strategy" | "scenarios" | "noise_presets" | "confidence" | "hotkeys" | "general" | "about";
 
 // ── Tab groups for sidebar (contextually organized, importance-ordered) ──
 interface TabItem {
@@ -56,6 +58,7 @@ const TAB_GROUPS: TabGroup[] = [
   {
     label: "Providers",
     items: [
+      { id: "api_pool", label: "API Pool", icon: <Database className="h-4 w-4" /> },
       { id: "local_models", label: "Local Models · VI/JA", icon: <Database className="h-4 w-4" /> },
       { id: "llm", label: "LLM Providers", icon: <Brain className="h-4 w-4" /> },
       { id: "stt", label: "STT Providers", icon: <Mic className="h-4 w-4" /> },
@@ -122,6 +125,7 @@ export function SettingsOverlay({ isModal = false }: SettingsOverlayProps) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        if(e.defaultPrevented || document.querySelector('[role="dialog"][aria-label="API Pool"], [role="dialog"][aria-label="Thiếu API key"]'))return;
         if (isModal) {
           handleCloseModal();
         } else {
@@ -145,6 +149,8 @@ export function SettingsOverlay({ isModal = false }: SettingsOverlayProps) {
 
   const renderTabContent = () => {
     switch (activeTab) {
+      case "api_pool":
+        return <ApiPoolSettings />;
       case "local_models":
         return <LocalModelsSettings />;
       case "meeting_audio":
@@ -178,10 +184,9 @@ export function SettingsOverlay({ isModal = false }: SettingsOverlayProps) {
     if (isModal) {
       handleCloseModal();
       setTimeout(() => {
-        useConfigStore.getState().setFirstRunCompleted(false);
+        setCurrentView("wizard");
       }, 200);
     } else {
-      useConfigStore.getState().setFirstRunCompleted(false);
       setCurrentView("wizard");
     }
   }, [isModal, handleCloseModal, setCurrentView]);
@@ -197,7 +202,7 @@ export function SettingsOverlay({ isModal = false }: SettingsOverlayProps) {
       <div
         ref={backdropRef}
         onClick={handleBackdropClick}
-        className={`fixed inset-0 z-50 flex items-center justify-center transition-all duration-150 ${
+        className={`fixed inset-0 z-50 flex items-center justify-center p-3 transition-all duration-150 ${
           isVisible
             ? "bg-black/60 backdrop-blur-sm"
             : "bg-black/0 backdrop-blur-none"
@@ -207,7 +212,7 @@ export function SettingsOverlay({ isModal = false }: SettingsOverlayProps) {
           role="dialog"
           aria-modal="true"
           aria-label="Settings"
-          className={`w-[640px] max-h-[520px] flex flex-col rounded-xl border border-border/40 bg-card shadow-2xl shadow-black/20 transition-all duration-200 ${
+          className={`w-full max-w-[640px] max-h-[min(520px,calc(100dvh-1.5rem))] flex flex-col overflow-hidden rounded-xl border border-border/40 bg-card shadow-2xl shadow-black/20 transition-all duration-200 ${
             isVisible
               ? "opacity-100 scale-100 translate-y-0"
               : "opacity-0 scale-[0.97] translate-y-3"
@@ -238,7 +243,7 @@ export function SettingsOverlay({ isModal = false }: SettingsOverlayProps) {
           </div>
 
           {/* Tab Navigation (horizontal, uses flat list) */}
-          <div className="flex border-b border-border/30 px-2 overflow-x-auto" role="tablist" aria-label="Settings navigation">
+          <div className="flex shrink-0 border-b border-border/30 px-2 overflow-x-auto" role="tablist" aria-label="Settings navigation">
             {ALL_TABS.map((tab) => (
               <button
                 key={tab.id}
@@ -262,9 +267,10 @@ export function SettingsOverlay({ isModal = false }: SettingsOverlayProps) {
           </div>
 
           {/* Tab Content */}
-          <div className="flex-1 overflow-y-auto p-5" role="tabpanel">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5" role="tabpanel">
             <div key={activeTab} className="settings-content-enter">{renderTabContent()}</div>
           </div>
+          <SettingsSaveStatus />
         </div>
       </div>
     );
@@ -289,7 +295,7 @@ export function SettingsOverlay({ isModal = false }: SettingsOverlayProps) {
         </div>
 
         {/* Grouped Navigation */}
-        <nav className="flex-1 overflow-y-auto px-3 pt-3 pb-1" role="tablist" aria-label="Settings navigation">
+        <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pt-3 pb-1" role="tablist" aria-label="Settings navigation">
           {TAB_GROUPS.map((group, gi) => (
             <div key={group.label} className={gi > 0 ? "mt-4" : ""}>
               {/* Group label */}
@@ -349,7 +355,7 @@ export function SettingsOverlay({ isModal = false }: SettingsOverlayProps) {
       </aside>
 
       {/* Content Area */}
-      <main className="flex-1 overflow-y-auto" role="tabpanel">
+      <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain" role="tabpanel">
         <div className={`mx-auto ${contentMaxW} px-8 py-8`}>
           {/* Section Heading */}
           <div className="mb-8">
@@ -363,6 +369,7 @@ export function SettingsOverlay({ isModal = false }: SettingsOverlayProps) {
           {/* Tab Content — animate on tab switch */}
           <div key={activeTab} className="settings-content-enter">{renderTabContent()}</div>
         </div>
+        <SettingsSaveStatus />
       </main>
     </div>
   );

@@ -1,3 +1,4 @@
+import { getSettingsStore, writeSetting } from "../lib/persistedSettings";
 import { create } from "zustand";
 import { load, Store } from "@tauri-apps/plugin-store";
 import type {
@@ -14,24 +15,14 @@ const STORE_FILE = "translation-config.json";
 // Singleton store instance, lazily initialized
 let storeInstance: Store | null = null;
 
-async function getStore(): Promise<Store> {
-  if (!storeInstance) {
-    storeInstance = await load(STORE_FILE, { autoSave: true, defaults: {} });
-  }
-  return storeInstance;
-}
+async function getStore(): Promise<Store> { return getSettingsStore("translation-config.json"); }
 
 /**
  * Persist a key-value pair to the Tauri plugin-store.
  * Fire-and-forget: errors are logged but do not block the UI.
  */
 async function persistValue(key: string, value: unknown): Promise<void> {
-  try {
-    const store = await getStore();
-    await store.set(key, value);
-  } catch (err) {
-    console.error(`[translationStore] Failed to persist "${key}":`, err);
-  }
+  await writeSetting("translation-config.json",key,value).catch(error=>console.error("Could not persist settings",error));
 }
 
 interface TranslationState {

@@ -525,6 +525,9 @@ pub async fn start_capture_per_party(
     let state = app.state::<AppState>();
     let performance_meeting_id = state.live_meeting.lock().map_err(|e| e.to_string())?
         .as_ref().map(|meeting| meeting.id.clone());
+    // A background preload must finish before live capture takes over, and
+    // explicit memory release must never race model initialization.
+    let _preparation = crate::commands::preparation_commands::GATE.lock().await;
 
     // If already capturing, stop first (allows mid-meeting hot-swap)
     {

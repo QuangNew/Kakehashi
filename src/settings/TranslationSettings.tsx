@@ -1,7 +1,11 @@
+import { ApiCredentialPicker } from "../components/ApiCredentialPicker";
+import { selectedCredential } from "../lib/apiPool";
+import { useApiPoolStore } from "../stores/apiPoolStore";
+import { getSettingsStore, writeSetting } from "../lib/persistedSettings";
 import { useEffect, useState } from "react";
 import { useTranslationStore } from "../stores/translationStore";
 import { useConfigStore } from "../stores/configStore";
-import { getApiKey, storeApiKey, listTranslationModels, testTranslationConnection } from "../lib/ipc";
+import { listTranslationModels, testTranslationConnection } from "../lib/ipc";
 import type { TranslationProviderType } from "../lib/types";
 import { OpusMtModelManager } from "./OpusMtModelManager";
 
@@ -10,7 +14,10 @@ export function TranslationSettings() {
   const config = useConfigStore();
   const [provider, setProvider] = useState<TranslationProviderType>(state.provider);
   const [model, setModel] = useState(state.provider === "hy-mt" ? "" : state.apiModels[state.provider] ?? "");
-  const [key, setKey] = useState("");
+  const pool = useApiPoolStore(s=>s.snapshot);
+  const poolRevision = useApiPoolStore(s=>s.revision);
+  const credential = selectedCredential(pool,"translation",provider);
+  const [draftModels,setDraftModels]=useState<Record<string,string>>({...state.apiModels} as Record<string,string>);
   const [models, setModels] = useState<Array<{ id: string; name: string }>>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -19,17 +26,31 @@ export function TranslationSettings() {
   const usesModel = provider === "groq" || provider === "gemini";
   const usesKey = usesModel || ["microsoft", "google", "deepl"].includes(provider);
 
+  useEffect(()=>{
+    let disposed=false;
+    getSettingsStore("settings-drafts.json").then(store=>store.get<{provider:TranslationProviderType;models:Record<string,string>}>("translation")).then(draft=>{
+      if(!disposed && draft){setProvider(draft.provider);setDraftModels(draft.models);setModel(draft.models[draft.provider] ?? "");}
+    }).catch(()=>{});
+    return()=>{disposed=true;};
+  },[]);
   useEffect(() => {
     let cancelled = false;
-    setKey(""); setModels([]); setMessage(""); setError("");
-    setModel(provider === "hy-mt" ? "" : useTranslationStore.getState().apiModels[provider] ?? "");
-    if (usesKey) {
-      getApiKey(`translation_${provider}`).then(value => { if (!cancelled) setKey(value ?? ""); })
-        .catch(reason => { if (!cancelled) setError(String(reason)); });
-    }
-    if (provider === "microsoft") getApiKey("translation_microsoft_region").then(value => { if (!cancelled) setRegion(value || "global"); }).catch(() => {});
+    setModels([]); setMessage(""); setError("");
+    setModel(draftModels[provider] ?? state.apiModels[provider] ?? "");
+    setRegion(credential?.region || "global");
+    if(usesModel && credential)listTranslationModels(provider).then(models=>{if(!cancelled)setModels(models);}).catch(error=>{if(!cancelled)setError(String(error));});
     return () => { cancelled = true; };
-  }, [provider]);
+  }, [provider, credential?.id, poolRevision]);
+  function selectProvider(next:TranslationProviderType) {
+    if(["groq","gemini","microsoft","google","deepl"].includes(next) && !selectedCredential(pool,"translation",next)){
+      useApiPoolStore.getState().askForKey(next);return;
+    }
+    setProvider(next);void writeSetting("settings-drafts.json","translation",{provider:next,models:draftModels}).catch(()=>{});
+  }
+  function editModel(value:string) {
+    setModel(value);const models={...draftModels,[provider]:value};setDraftModels(models);
+    void writeSetting("settings-drafts.json","translation",{provider,models}).catch(()=>{});
+  }
 
   async function run(action: () => Promise<void>) {
     setBusy(true); setError(""); setMessage("");
@@ -37,21 +58,17 @@ export function TranslationSettings() {
     finally { setBusy(false); }
   }
   async function saveKey() {
-    if (usesKey) {
-      if (!key.trim()) throw new Error("Nhập API key cho AI dịch.");
-      await storeApiKey(`translation_${provider}`, key.trim());
-      if (provider === "microsoft") await storeApiKey("translation_microsoft_region", region.trim() || "global");
-    }
+    if(usesKey && !credential){useApiPoolStore.getState().askForKey(provider);throw new Error("Chọn key trong API Pool trước khi áp dụng.");}
   }
 
   return <div className="space-y-6">
     <div>
       <h2 className="text-lg font-semibold text-foreground">AI dịch — Nhật ↔ Việt</h2>
-      <p className="mt-1 text-sm text-muted-foreground">Provider, model và key của AI dịch được chọn riêng với AI copilot.</p>
+      <p className="mt-1 text-sm text-muted-foreground">Provider và model của AI dịch được chọn riêng với AI copilot; chọn key đã lưu từ API Pool.</p>
     </div>
     <fieldset disabled={busy} className="space-y-4 disabled:opacity-60">
       <label className="block text-sm">Nhà cung cấp
-        <select aria-label="Nhà cung cấp AI dịch" value={provider} onChange={e => setProvider(e.target.value as TranslationProviderType)} className="mt-1 w-full rounded border border-border bg-background p-2">
+        <select aria-label="Nhà cung cấp AI dịch" value={provider} onChange={e => selectProvider(e.target.value as TranslationProviderType)} className="mt-1 w-full rounded border border-border bg-background p-2">
           <option value="hy-mt">Hy-MT2 local — model trong folder</option>
           <option value="groq">Groq API</option>
           <option value="gemini">Google AI Studio — Gemini API</option>
@@ -63,15 +80,11 @@ export function TranslationSettings() {
         </select>
       </label>
       {usesKey ? <>
-        <p className="text-sm text-muted-foreground">Nội dung cần dịch được gửi đến nhà cung cấp đã chọn. Key này chỉ dành cho AI dịch.</p>
-        <label className="block text-sm">API key
-          <input aria-label="API key AI dịch" type="password" value={key} onChange={e => setKey(e.target.value)} autoComplete="off" className="mt-1 w-full rounded border border-border bg-background p-2" />
-        </label>
-        {provider === "microsoft" && <label className="block text-sm">Region<input aria-label="Region Microsoft Translator" value={region} onChange={e => setRegion(e.target.value)} className="mt-1 w-full rounded border border-border bg-background p-2" /></label>}
+        <ApiCredentialPicker usage="translation" provider={provider} />
         {usesModel && <>
-        <button type="button" className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent" onClick={() => void run(async () => { await saveKey(); setModels(await listTranslationModels(provider)); setMessage("Đã nạp danh sách model. Chọn model rồi áp dụng."); })}>Lưu key và nạp model</button>
+        <button type="button" className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent" onClick={() => void run(async () => { await saveKey(); setModels(await listTranslationModels(provider)); setMessage("Đã nạp danh sách model. Chọn model rồi áp dụng."); })}>Làm mới danh sách model</button>
         <label className="block text-sm">Model
-          <input aria-label="Model AI dịch" list="translation-api-models" value={model} onChange={e => setModel(e.target.value)} placeholder="Nhập ID hoặc chọn model từ danh sách" className="mt-1 w-full rounded border border-border bg-background p-2" />
+          <input aria-label="Model AI dịch" list="translation-api-models" value={model} onChange={e => editModel(e.target.value)} placeholder="Nhập ID hoặc chọn model từ danh sách" className="mt-1 w-full rounded border border-border bg-background p-2" />
           <datalist id="translation-api-models">{models.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</datalist>
         </label>
         </>}

@@ -1,8 +1,11 @@
+import { getSettingsStore, writeSetting } from "../lib/persistedSettings";
+import { ModelPreparationControls } from "../components/ModelPreparationControls";
 import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { FolderOpen, Loader2, Play, Square } from "lucide-react";
 import {
   getLocalModelsConfig, getLocalModelsStatus, saveLocalModelsConfig, startLocalModel, stopLocalModel,
+  localModelsEqual, localModelsDraftMatches,
   type LocalModelsConfig, type ModelRole, type RuntimeStatus,
 } from "../lib/localModels";
 import { listAudioDevices, listLocalSTTEngines, setTranslationProvider, getRagConfig, updateRagConfig } from "../lib/ipc";
@@ -25,6 +28,7 @@ const buttonClass = "inline-flex items-center justify-center gap-2 rounded-lg bo
 
 export function LocalModelsSettings() {
   const [config, setConfig] = useState<LocalModelsConfig | null>(null);
+  const [actualConfig,setActualConfig]=useState<LocalModelsConfig | null>(null);
   const [statuses, setStatuses] = useState<RuntimeStatus[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -36,12 +40,23 @@ export function LocalModelsSettings() {
 
   useEffect(() => {
     let disposed = false;
-    getLocalModelsConfig().then((value) => { if (!disposed) setConfig(value); }).catch((e) => { if (!disposed) setError(String(e)); });
+    getLocalModelsConfig().then(async(value) => {
+      const draft=await getSettingsStore("settings-drafts.json").then(store=>store.get<{config:LocalModelsConfig;base:string}>("localModels")).catch(()=>null);
+      if(!disposed){setActualConfig(value);setConfig(draft && localModelsDraftMatches(draft.base,value) ? draft.config : value);}
+    }).catch((e) => { if (!disposed) setError(String(e)); });
     const refresh = () => getLocalModelsStatus().then((value) => { if (!disposed) setStatuses(value); }).catch((e) => { if (!disposed) setError(String(e)); });
     void refresh();
     const timer = setInterval(refresh, 2000);
     return () => { disposed = true; clearInterval(timer); };
   }, []);
+
+  useEffect(()=>{
+    if(config && actualConfig)void writeSetting("settings-drafts.json","localModels",localModelsEqual(config,actualConfig) ? null : {config,base:JSON.stringify(actualConfig)}).catch(()=>{});
+  },[config,actualConfig]);
+  async function applyModelConfig(value:LocalModelsConfig){
+    await saveLocalModelsConfig(value);setActualConfig(value);
+    await writeSetting("settings-drafts.json","localModels",null);
+  }
 
   async function run(label: string, action: () => Promise<void>) {
     setBusy(label); setError(null); setMessage(null);
@@ -64,14 +79,14 @@ export function LocalModelsSettings() {
 
   async function saveAndStart(role: ModelRole) {
     if (!config) throw new Error("Model configuration is not loaded");
-    await saveLocalModelsConfig(config);
+    await applyModelConfig(config);
     await useContextStore.getState().refreshTokenBudget();
     await startLocalModel(role);
   }
 
   async function enableMeeting() {
     if (!config) throw new Error("Model configuration is not loaded");
-    await saveLocalModelsConfig(config);
+    await applyModelConfig(config);
     await useContextStore.getState().refreshTokenBudget();
     const engines = await listLocalSTTEngines();
     if (!engines.find((engine) => engine.engine === "whisper_cpp")?.models.some((model) => model.id === "large-v3-turbo" && model.is_downloaded)) {
@@ -118,7 +133,9 @@ export function LocalModelsSettings() {
         <h2 className="text-lg font-semibold">Model local · Việt ↔ 日本語</h2>
         <p className="mt-1 text-sm text-muted-foreground">Chọn thư mục model và llama-server. Ứng dụng tự mở runtime khi dùng AI và dừng các tiến trình do nó tạo khi thoát.</p>
       </div>
+      {config && actualConfig && !localModelsEqual(config,actualConfig) && <p role="status" className="rounded-lg bg-amber-500/10 p-3 text-sm">Bản nháp đã lưu cho lần sau; nhấn Kiểm tra model hoặc Áp dụng để đổi cấu hình backend.</p>}
       {meetingActive && <p role="status" className="rounded-lg bg-amber-500/10 p-3 text-sm">Kết thúc cuộc họp để đổi file model hoặc cấu hình runtime.</p>}
+      <ModelPreparationControls />
       {error && <p role="alert" className="break-words rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
       {message && <p role="status" className="rounded-lg bg-success/10 p-3 text-sm">{message}</p>}
       <fieldset disabled={disabled} className="space-y-4 rounded-xl border border-border/40 p-4">

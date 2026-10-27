@@ -43,6 +43,7 @@ use commands::meeting_commands;
 use commands::settings_commands;
 // == MODULE COMMANDS: models ==
 use commands::model_commands;
+use commands::preparation_commands;
 // == MODULE COMMANDS: stealth ==
 use commands::stealth_commands;
 // == MODULE COMMANDS: gemini cache ==
@@ -262,7 +263,10 @@ pub fn run() {
             log::info!("Model manager initialized");
 
             // -- Initialize CredentialManager --
-            let cred_mgr = credentials::CredentialManager::new();
+            let mut cred_mgr = credentials::CredentialManager::new();
+            if let Err(error) = cred_mgr.initialize_pool(app_data_dir.join("api-pool.json")) {
+                log::error!("Cannot initialize API Pool: {}",error);
+            }
             app_state.credentials = Some(Arc::new(Mutex::new(cred_mgr)));
             log::info!("Credential manager initialized");
 
@@ -631,6 +635,11 @@ pub fn run() {
             credential_commands::get_api_key,
             credential_commands::delete_api_key,
             credential_commands::has_api_key,
+            credential_commands::get_api_pool,
+            credential_commands::test_api_pool_entry,
+            credential_commands::save_api_pool_entry,
+            credential_commands::delete_api_pool_entry,
+            credential_commands::bind_api_pool_entry,
             // == COMMANDS: meetings ==
             meeting_commands::start_meeting,
             meeting_commands::end_meeting,
@@ -662,6 +671,9 @@ pub fn run() {
             model_commands::list_local_stt_engines,
             model_commands::download_local_stt_model,
             model_commands::get_model_downloads,
+            preparation_commands::prepare_meeting_models,
+            preparation_commands::get_model_preparation,
+            preparation_commands::release_prepared_models,
             model_commands::cancel_model_download,
             model_commands::delete_local_stt_model,
             // == COMMANDS: stealth ==

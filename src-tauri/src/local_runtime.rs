@@ -343,6 +343,9 @@ impl LocalRuntime {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .kill_on_drop(true);
+        if role == ModelRole::Translation {
+            command.args(["--threads","8","--threads-batch","8","--batch-size","256","--ubatch-size","128"]);
+        }
         if role == ModelRole::Embeddings {
             command.args(["--embedding", "--pooling", "last"]);
         }

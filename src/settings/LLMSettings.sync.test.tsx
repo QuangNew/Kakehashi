@@ -104,12 +104,12 @@ describe("Settings ↔ footer sync of the active LLM", () => {
 
     await waitFor(() => expect(footerShowsClaude()).toBe(true));
     expect(useConfigStore.getState().llmProvider).toBe("claude_cli");
-    expect(ipc.setLLMProvider).toHaveBeenCalledWith(JSON.stringify({ provider_type: "claude_cli" }));
-    expect(ipc.setActiveModel).toHaveBeenCalledWith("claude_cli", "haiku");
+    expect(ipc.setLLMProvider).toHaveBeenCalledWith(JSON.stringify({ provider_type: "claude_cli" }), "haiku");
+    expect(ipc.setLLMProvider).toHaveBeenCalledWith(JSON.stringify({ provider_type: "claude_cli" }), "haiku");
     expect(within(claudeCard()).getByText("Active")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Use Claude" })).not.toBeInTheDocument();
     // Same side effects as every other activation path.
-    expect(useConfigStore.getState().verifiedCloudProviders).toContain("claude_cli");
+    // Activation applies provider/model; authentication is reported separately.
   });
 
   it("the bottom 'Set as Active' button takes the same path", async () => {
@@ -123,7 +123,7 @@ describe("Settings ↔ footer sync of the active LLM", () => {
     await screen.findByText("me@example.com · Max");
     fireEvent.click(screen.getByRole("button", { name: /set claude \(subscription\) as active provider/i }));
     await waitFor(() => expect(footerShowsClaude()).toBe(true));
-    expect(ipc.setActiveModel).toHaveBeenCalledWith("claude_cli", "haiku");
+    expect(ipc.setLLMProvider).toHaveBeenCalledWith(JSON.stringify({ provider_type: "claude_cli" }), "haiku");
   });
 
   it("after an answer has streamed, the footer shows the newly activated provider, not the last stream's", async () => {

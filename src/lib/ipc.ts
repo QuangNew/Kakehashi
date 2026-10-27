@@ -163,8 +163,8 @@ export async function getAvailableSTTProviders(): Promise<string[]> {
 
 // == IPC: LLM (Sub-PRD 5) ==
 
-export async function setLLMProvider(provider: string): Promise<void> {
-  return invoke("set_llm_provider", { provider });
+export async function setLLMProvider(provider: string, modelId?: string): Promise<void> {
+  return invoke("set_llm_provider", { provider, ...(modelId ? {modelId} : {}) });
 }
 
 export async function listModels(provider: string): Promise<ModelInfo[]> {

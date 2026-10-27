@@ -212,6 +212,7 @@ pub struct LLMRouter {
     active_model: String,
     active_provider_type: Option<ProviderType>,
     cancel_token: Arc<TokioMutex<bool>>,
+    active_config: Option<ProviderConfig>,
 }
 
 impl LLMRouter {
@@ -221,6 +222,7 @@ impl LLMRouter {
             active_model: String::new(),
             active_provider_type: None,
             cancel_token: Arc::new(TokioMutex::new(false)),
+            active_config: None,
         }
     }
 
@@ -234,6 +236,7 @@ impl LLMRouter {
 
         self.active_provider = Some(Arc::new(TokioMutex::new(provider)));
         self.active_provider_type = Some(provider_type);
+        self.active_config = Some(config);
         Ok(())
     }
 
@@ -248,6 +251,8 @@ impl LLMRouter {
     pub fn active_model(&self) -> &str {
         &self.active_model
     }
+    pub fn active_config(&self) -> Option<ProviderConfig> { self.active_config.clone() }
+    pub fn invalidate_credentials(&mut self) { self.active_provider = None; }
 
     /// Set the active model.
     pub fn set_active_model(&mut self, model: String) {

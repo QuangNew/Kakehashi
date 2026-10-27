@@ -3,9 +3,11 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   start: vi.fn(), save: vi.fn(), activate: vi.fn(), setAudio: vi.fn(), setProvider: vi.fn(), updateRag: vi.fn(),
   engines: vi.fn(),
+  draft: null as unknown,
   activeMeeting: null as object | null,
 }));
-vi.mock("../lib/localModels", () => ({
+vi.mock("../lib/localModels", async (original) => ({
+  ...(await original<typeof import("../lib/localModels")>()),
   getLocalModelsConfig: vi.fn(async () => ({ models_dir: "C:/models", server_path: "C:/runtime/llama-server.exe",
     translation: { file: "translation.gguf", context: 2048, gpu_layers: 99 },
     copilot: { file: "copilot.gguf", context: 4096, gpu_layers: 0 },
@@ -26,11 +28,24 @@ vi.mock("../stores/translationStore", () => {
 });
 vi.mock("../stores/aiActionsStore", () => ({ useAIActionsStore: { getState: () => ({ configs: { customInstructions: "" }, setCustomInstructions: vi.fn() }) } }));
 vi.mock("../stores/ragStore", () => ({ useRagStore: { getState: () => ({ loadRagConfig: vi.fn(async () => {}), markSourcesChanged: vi.fn() }) } }));
+vi.mock("../lib/persistedSettings", () => ({
+  getSettingsStore: async () => ({get: async () => mocks.draft}),
+  writeSetting: vi.fn(async () => {}),
+}));
+vi.mock("../components/ModelPreparationControls", () => ({ModelPreparationControls: () => null}));
 import { LocalModelsSettings } from "./LocalModelsSettings";
 
-beforeEach(() => { vi.clearAllMocks(); mocks.activeMeeting = null; mocks.start.mockResolvedValue("local"); mocks.save.mockResolvedValue(undefined); mocks.activate.mockResolvedValue(undefined); mocks.engines.mockResolvedValue([{ engine: "whisper_cpp", models: [{ id: "large-v3-turbo", is_downloaded: true }] }]); });
+beforeEach(() => { vi.clearAllMocks(); mocks.draft=null; mocks.activeMeeting = null; mocks.start.mockResolvedValue("local"); mocks.save.mockResolvedValue(undefined); mocks.activate.mockResolvedValue(undefined); mocks.engines.mockResolvedValue([{ engine: "whisper_cpp", models: [{ id: "large-v3-turbo", is_downloaded: true }] }]); });
 afterEach(cleanup);
 describe("local model setup", () => {
+  it("does not show a pending draft when plugin-store reorders JSON properties",async()=>{
+    const backend=await (await import("../lib/localModels")).getLocalModelsConfig();
+    const reorder=(value:unknown):unknown=>value && typeof value==="object" ? Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([key,value])=>[key,reorder(value)])) : value;
+    mocks.draft={config:reorder(backend),base:JSON.stringify(reorder(backend))};
+    render(<LocalModelsSettings/>);
+    expect(await screen.findByRole("textbox",{name:"Models folder"})).toHaveValue(backend.models_dir);
+    expect(screen.queryByText(/Bản nháp đã lưu/)).not.toBeInTheDocument();
+  });
   it("applies bilingual audio and the dedicated translator without switching the copilot", async () => {
     render(<LocalModelsSettings />);
     fireEvent.click(await screen.findByRole("button", { name: "Áp dụng chế độ Việt–Nhật" }));

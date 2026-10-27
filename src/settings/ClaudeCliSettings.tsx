@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-shell";
 import { ExternalLink, Loader2, RefreshCw, Terminal } from "lucide-react";
 import { API_BILLED_NOTE, NPM_ONLY_NOTE } from "../lib/agentUsage";
-import { getApiKey, listModels, openClaudeLoginTerminal } from "../lib/ipc";
+import { listModels, openClaudeLoginTerminal } from "../lib/ipc";
+import { isChatModel } from "../lib/chatModels";
 import {
   STATIC_CLAUDE_MODELS,
   effectiveEffort,
@@ -622,9 +623,8 @@ function FallbackSettings() {
     setLoading(true);
     (async () => {
       try {
-        const key = await getApiKey(provider).catch(() => null);
-        const list = await listModels(JSON.stringify({ provider_type: provider, ...(key && { api_key: key }) }));
-        if (!cancelled) setModels(list.map((m) => m.id));
+        const list = await listModels(JSON.stringify({ provider_type: provider }));
+        if (!cancelled) setModels(list.filter(m=>isChatModel(m.id)).map((m) => m.id));
       } catch {
         // No list (server down, no key): the saved model and the default stay available.
       } finally {

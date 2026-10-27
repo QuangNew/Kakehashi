@@ -1,3 +1,6 @@
+import { ApiCredentialPicker } from "../components/ApiCredentialPicker";
+import { selectedCredential } from "../lib/apiPool";
+import { useApiPoolStore } from "../stores/apiPoolStore";
 // STT Settings — provider selector with inline model management per provider.
 // Badges: always-ready=green, no model/key=red, downloaded-not-active=amber,
 //         cloud-key-stored=amber, cloud-tested=green.
@@ -9,16 +12,12 @@ import {
   setSTTProvider,
   testSTTConnection,
   listLocalSTTEngines,
-  deleteApiKey,
 } from "../lib/ipc";
-import { storeApiKey, getApiKey, hasApiKey } from "../lib/ipc";
 import type { STTProviderType, LocalSTTEngineInfo, DeepgramConfig, GroqConfig } from "../lib/types";
 import {
   CheckCircle,
   XCircle,
   Loader2,
-  Eye,
-  EyeOff,
   Cloud,
   Server,
   Globe,
@@ -26,7 +25,6 @@ import {
   HardDrive,
   Monitor,
   Zap,
-  Trash2,
   ChevronDown,
   ChevronUp,
   Settings2,
@@ -274,6 +272,7 @@ type BadgeVariant = "ready" | "warning" | "error";
 interface BadgeState { text: string; variant: BadgeVariant }
 
 export function STTSettings() {
+  const pool = useApiPoolStore(s=>s.snapshot);
   const sttProvider = useConfigStore((s) => s.sttProvider);
   const setConfigSTTProvider = useConfigStore((s) => s.setSTTProvider);
   const meetingAudioConfig = useConfigStore((s) => s.meetingAudioConfig);
@@ -282,22 +281,13 @@ export function STTSettings() {
   const setSTTLanguage = useConfigStore((s) => s.setSTTLanguage);
   const activeWhisperModel = useConfigStore((s) => s.activeWhisperModel);
   // Persisted: providers whose key has been saved + tested successfully
-  const verifiedCloudProviders = useConfigStore((s) => s.verifiedCloudProviders);
-  const setVerifiedCloudProviders = useConfigStore((s) => s.setVerifiedCloudProviders);
 
   const [selectedProvider, setSelectedProvider] =
     useState<STTProviderType>(sttProvider);
-  const [apiKey, setApiKey] = useState("");
-  const [showApiKey, setShowApiKey] = useState(false);
-  const [hasStoredKey, setHasStoredKey] = useState(false);
-  // keyDirty: user has typed a new key that differs from stored — show Save & Test
-  const [keyDirty, setKeyDirty] = useState(false);
   const [connectionStatus, setConnectionStatus] =
     useState<ConnectionStatus>("idle");
   const [statusMessage, setStatusMessage] = useState("");
 
-  const [azureRegion, setAzureRegion] = useState("eastus");
-  const [hasStoredRegion, setHasStoredRegion] = useState(false);
 
   const [localEngines, setLocalEngines] = useState<LocalSTTEngineInfo[]>([]);
   const activeParakeetModel = useConfigStore((s) =>
@@ -357,7 +347,7 @@ export function STTSettings() {
 
     if (p.requiresApiKey) {
       // Verified = key was saved+tested successfully (persisted across page navigations)
-      if (verifiedCloudProviders.includes(p.value)) return { text: "Ready", variant: "ready" };
+      if (selectedCredential(pool,"stt",p.value)) return { text: "Key sẵn sàng", variant: "ready" };
       return { text: "No Key", variant: "error" };
     }
 
@@ -374,58 +364,16 @@ export function STTSettings() {
     return getBadgeState(p).variant === "ready";
   }
 
-  // ── Key loading (load stored key display when switching providers) ──
-
-  useEffect(() => {
-    const loadKeyForProvider = async () => {
-      setApiKey("");
-      setShowApiKey(false);
-      setHasStoredKey(false);
-      setKeyDirty(false);
-      setConnectionStatus("idle");
-      setStatusMessage("");
-
-      if (!currentProviderOption?.requiresApiKey) return;
-
-      const credKey = currentProviderOption.credentialKey;
-      if (!credKey) return;
-
-      try {
-        const keyExists = await hasApiKey(credKey);
-        setHasStoredKey(keyExists);
-        if (keyExists) {
-          const stored = await getApiKey(credKey);
-          if (stored) setApiKey(stored);
-        }
-      } catch (e) {
-        console.warn("Failed to load STT API key:", e);
-      }
-
-      if (currentProviderOption.needsRegion) {
-        try {
-          const regionExists = await hasApiKey("azure_speech_region");
-          setHasStoredRegion(regionExists);
-          if (regionExists) {
-            const stored = await getApiKey("azure_speech_region");
-            if (stored) setAzureRegion(stored);
-          }
-        } catch (e) {
-          console.warn("Failed to load Azure region:", e);
-        }
-      }
-    };
-    loadKeyForProvider();
-  }, [selectedProvider, currentProviderOption?.credentialKey, currentProviderOption?.requiresApiKey, currentProviderOption?.needsRegion]);
-
   // ── Handlers ──
 
   const handleProviderChange = useCallback(
     async (provider: STTProviderType) => {
-      setSelectedProvider(provider);
-      setConnectionStatus("idle");
-      setStatusMessage("");
+      const option=PROVIDER_OPTIONS.find(p=>p.value===provider);
+      if(option?.requiresApiKey && !selectedCredential(pool,"stt",provider)){useApiPoolStore.getState().askForKey(provider);return;}
+      setConnectionStatus("idle");setStatusMessage("");
       try {
         await setSTTProvider(provider);
+        setSelectedProvider(provider);
         setConfigSTTProvider(provider);
         // Sync meetingAudioConfig so useAudioConfigSync hot-swaps the live capture.
         if (meetingAudioConfig) {
@@ -435,78 +383,13 @@ export function STTSettings() {
           });
         }
       } catch (e) {
-        console.error("Failed to set STT provider:", e);
+        setConnectionStatus("error");setStatusMessage(String(e));
       }
     },
-    [setConfigSTTProvider, meetingAudioConfig, setMeetingAudioConfig]
+    [setConfigSTTProvider, meetingAudioConfig, setMeetingAudioConfig, pool]
   );
 
-  /** Save & Test: test key first, only persist on success. */
-  const handleSaveAndTest = useCallback(async () => {
-    if (!apiKey.trim() || !currentProviderOption?.credentialKey) return;
-
-    setConnectionStatus("testing");
-    setStatusMessage("Testing connection...");
-
-    try {
-      // Temporarily store so the backend can read it during test
-      await storeApiKey(currentProviderOption.credentialKey, apiKey.trim());
-      if (currentProviderOption.needsRegion && azureRegion.trim()) {
-        await storeApiKey("azure_speech_region", azureRegion.trim());
-        setHasStoredRegion(true);
-      }
-
-      const success = await testSTTConnection(selectedProvider);
-      if (success) {
-        setHasStoredKey(true);
-        setKeyDirty(false);
-        setConnectionStatus("success");
-        setStatusMessage("Connection successful — provider is ready");
-        // Persist the verified state
-        const updated = Array.from(new Set([...verifiedCloudProviders, selectedProvider]));
-        setVerifiedCloudProviders(updated);
-      } else {
-        // Remove the key we temporarily stored — test failed
-        await deleteApiKey(currentProviderOption.credentialKey).catch(() => {});
-        setHasStoredKey(false);
-        setConnectionStatus("error");
-        setStatusMessage("Connection failed — key not saved");
-        const updated = verifiedCloudProviders.filter((p) => p !== selectedProvider);
-        setVerifiedCloudProviders(updated);
-      }
-    } catch (e) {
-      await deleteApiKey(currentProviderOption.credentialKey!).catch(() => {});
-      setHasStoredKey(false);
-      setConnectionStatus("error");
-      setStatusMessage(`Test failed: ${e}`);
-      const updated = verifiedCloudProviders.filter((p) => p !== selectedProvider);
-      setVerifiedCloudProviders(updated);
-    }
-  }, [apiKey, azureRegion, selectedProvider, currentProviderOption, verifiedCloudProviders, setVerifiedCloudProviders]);
-
-  const handleClearApiKey = useCallback(async () => {
-    if (!currentProviderOption?.credentialKey) return;
-    try { await deleteApiKey(currentProviderOption.credentialKey); } catch { /* ok */ }
-    setApiKey("");
-    setHasStoredKey(false);
-    setKeyDirty(false);
-    setConnectionStatus("idle");
-    setStatusMessage("");
-    const updated = verifiedCloudProviders.filter((p) => p !== selectedProvider);
-    setVerifiedCloudProviders(updated);
-  }, [currentProviderOption?.credentialKey, selectedProvider, verifiedCloudProviders, setVerifiedCloudProviders]);
-
-  const handleSaveRegion = useCallback(async () => {
-    if (!azureRegion.trim()) return;
-    try {
-      await storeApiKey("azure_speech_region", azureRegion.trim());
-      setHasStoredRegion(true);
-    } catch (e) {
-      console.warn("Failed to save Azure region:", e);
-    }
-  }, [azureRegion]);
-
-  /** Test Connection — only for local/always-ready providers; cloud uses handleSaveAndTest. */
+  /** Test Connection — only for local/always-ready providers; cloud credentials are managed by API Pool. */
   const handleTestConnection = useCallback(async () => {
     setConnectionStatus("testing");
     setStatusMessage("Testing...");
@@ -621,115 +504,7 @@ export function STTSettings() {
         </div>
       )}
 
-      {/* API Key — cloud providers only. Save & Test flow: test first, persist only on success. */}
-      {currentProviderOption?.requiresApiKey && (
-        <div className="rounded-xl border border-border/30 bg-card/50 p-5">
-          <h3 className="mb-3 text-sm font-semibold text-primary/80">API Key</h3>
-
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <input
-                type={showApiKey ? "text" : "password"}
-                value={apiKey}
-                onChange={(e) => {
-                  setApiKey(e.target.value);
-                  setKeyDirty(true);
-                  setConnectionStatus("idle");
-                  setStatusMessage("");
-                }}
-                placeholder={
-                  hasStoredKey && !keyDirty
-                    ? "Key stored — type to replace"
-                    : `Enter ${currentProviderOption.label} API key`
-                }
-                className="w-full rounded-lg border border-border/50 bg-background px-3.5 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
-              />
-              <button
-                onClick={() => setShowApiKey(!showApiKey)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground"
-                type="button"
-                aria-label={showApiKey ? "Hide API key" : "Show API key"}
-                aria-pressed={showApiKey}
-              >
-                {showApiKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-              </button>
-            </div>
-
-            {/* Save & Test — shown whenever user has typed a key */}
-            {(keyDirty || (!hasStoredKey && apiKey.trim())) && (
-              <button
-                onClick={handleSaveAndTest}
-                disabled={!apiKey.trim() || connectionStatus === "testing"}
-                className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {connectionStatus === "testing" ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Wifi className="h-3.5 w-3.5" />
-                )}
-                Save & Test
-              </button>
-            )}
-
-            {/* Clear — only if key is stored and verified, and user hasn't started typing a new one */}
-            {hasStoredKey && !keyDirty && (
-              <button
-                onClick={handleClearApiKey}
-                className="flex items-center gap-1.5 rounded-lg border border-destructive/30 px-3 py-2 text-xs text-destructive transition-colors hover:bg-destructive/10"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Clear
-              </button>
-            )}
-          </div>
-
-          {/* Status feedback */}
-          <div className="mt-2 min-h-[18px]">
-            {connectionStatus === "success" && (
-              <div className="flex items-center gap-1.5 text-xs text-success">
-                <CheckCircle className="h-3 w-3" />
-                {statusMessage}
-              </div>
-            )}
-            {connectionStatus === "error" && (
-              <div className="flex items-center gap-1.5 text-xs text-destructive">
-                <XCircle className="h-3 w-3" />
-                {statusMessage}
-              </div>
-            )}
-            {connectionStatus === "idle" && hasStoredKey && !keyDirty && (
-              <p className="text-xs text-success/70">
-                API key verified and stored securely
-              </p>
-            )}
-            {connectionStatus === "idle" && !hasStoredKey && (
-              <p className="text-xs text-muted-foreground">
-                Enter your key and click Save & Test
-              </p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Azure Region Input */}
-      {currentProviderOption?.needsRegion && (
-        <div className="rounded-xl border border-border/30 bg-card/50 p-5">
-          <h3 className="mb-3 text-sm font-semibold text-primary/80">
-            Azure Region
-          </h3>
-          <input
-            type="text"
-            value={azureRegion}
-            onChange={(e) => setAzureRegion(e.target.value)}
-            onBlur={handleSaveRegion}
-            placeholder="eastus"
-            className="w-full rounded-lg border border-border/50 bg-background px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
-          />
-          <p className="mt-1.5 text-xs text-muted-foreground">
-            Azure region for your Speech Services resource (e.g., eastus, westeurope, southeastasia)
-          </p>
-        </div>
-      )}
+      {currentProviderOption?.requiresApiKey && <ApiCredentialPicker usage="stt" provider={selectedProvider} />}
 
       {/* Universal Pause Detection */}
       <PauseThresholdSetting />

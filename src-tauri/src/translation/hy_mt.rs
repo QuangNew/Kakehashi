@@ -10,23 +10,19 @@ pub async fn prepare_local_translation(
     if provider.provider_type() != TranslationProviderType::HyMt {
         return Ok(());
     }
-    for (text, source, target) in [
-        ("本日の打ち合わせでは、現在の進捗と今後の予定を確認します。分からない点は質問してください。", "ja", "vi"),
-        ("Trong cuộc họp hôm nay, chúng tôi sẽ xác nhận tiến độ công việc và lịch trình tiếp theo. Nếu có điểm nào chưa rõ, vui lòng đặt câu hỏi.", "vi", "ja"),
-    ] {
-        provider.translate(text, Some(source), target).await?;
-    }
-    Ok(())
+    provider.prepare().await
 }
 
 pub struct HyMtTranslator {
     runtime: Arc<LocalRuntime>,
     client: reqwest::Client,
+    prepared_pid: tokio::sync::Mutex<Option<u32>>,
 }
 
 impl HyMtTranslator {
     pub fn new(runtime: Arc<LocalRuntime>) -> Self {
         Self {
+            prepared_pid: tokio::sync::Mutex::new(None),
             runtime,
             client: reqwest::Client::builder()
                 .no_proxy()
@@ -39,6 +35,23 @@ impl HyMtTranslator {
 
 #[async_trait]
 impl TranslationProvider for HyMtTranslator {
+    async fn prepare(&self) -> Result<(),TranslationError> {
+        let mut prepared=self.prepared_pid.lock().await;
+        let endpoint=self.runtime.ensure(ModelRole::Translation).await.map_err(TranslationError::NotConfigured)?;
+        let pid=self.runtime.status().iter().find(|s|s.role==ModelRole::Translation).and_then(|s|s.pid);
+        if pid.is_some() && *prepared==pid { return Ok(()); }
+        // Neutral, capped warmup exercises encoder/decoder shapes, without
+        // generating two long paragraphs before every meeting.
+        for (text,target) in [("こんにちは。","Vietnamese"),("Xin chào.","Japanese")] {
+            let response=self.client.post(format!("{endpoint}/chat/completions")).json(&serde_json::json!({
+                "model":"translation","stream":false,"messages":[{"role":"user","content":format!("Translate into {target}. Output only the translation.\n{text}")}],
+                "temperature":0.0,"max_tokens":8,
+            })).send().await.map_err(|e|TranslationError::Http(e.to_string()))?;
+            if !response.status().is_success(){return Err(TranslationError::Failed("Local translation warmup failed".into()));}
+            let _=response.bytes().await.map_err(|e|TranslationError::Http(e.to_string()))?;
+        }
+        *prepared=pid;Ok(())
+    }
     fn provider_name(&self) -> &str {
         "Hy-MT Local"
     }

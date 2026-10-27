@@ -9,6 +9,15 @@ export interface LocalModelsConfig {
   copilot: ModelSettings;
   embeddings: ModelSettings;
 }
+/** Compare values after plugin-store has reordered JSON object properties. */
+export function localModelsEqual(left:LocalModelsConfig,right:LocalModelsConfig):boolean {
+  return left.models_dir===right.models_dir && left.server_path===right.server_path &&
+    (["translation","copilot","embeddings"] as const).every(role=>
+      left[role]?.file===right[role]?.file && left[role]?.context===right[role]?.context && left[role]?.gpu_layers===right[role]?.gpu_layers);
+}
+export function localModelsDraftMatches(base:string,actual:LocalModelsConfig):boolean {
+  try{return localModelsEqual(JSON.parse(base),actual);}catch{return false;}
+}
 export interface RuntimeStatus { role: ModelRole; state: string; pid?: number; endpoint: string; error?: string; device?: string }
 export const MANAGED_COPILOT_URL = "http://127.0.0.1:18182/v1";
 export const MANAGED_EMBEDDING_URL = "http://127.0.0.1:18183/v1";

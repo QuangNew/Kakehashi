@@ -41,9 +41,14 @@ AppData do Tauri xác định, hiện là `%APPDATA%/com.tvnjp.app`:
 
 - `nexq.db`: SQLite, giữ tên để tiếp tục dùng lịch sử cũ.
 - `config.json`, `translation-config.json`, `local-models.json`, `rag-config.json`: cấu hình.
+- `settings-drafts.json`: cấu hình model/dịch chưa áp dụng; `api-pool.json`: nhãn key và lựa chọn theo vai trò, không chứa secret.
 - `context/`, `recordings/`: tài liệu đã nhập và ghi âm/waveform.
 - `backups/before-path-migration-*.db`: backup trước khi chuyển tham chiếu đường dẫn cũ.
 
-Key API dùng Windows Credential Manager. Namespace dịch là `translation_groq` và `translation_gemini`; copilot dùng `groq`, `gemini` tương ứng. Tên dịch vụ credential kế thừa được giữ để không làm mất key có sẵn.
+Key API dùng Windows Credential Manager, mỗi mục Pool có ID riêng. Các namespace cũ như `translation_groq`/`groq` được nhập một lần và giữ nguyên bản gốc. Khi đổi hoặc xóa key trong Pool, backend tạo lại client đang chọn và phát `api_pool_changed` để cả hai cửa sổ cập nhật; thay key của STT cloud sẽ khởi động lại luồng STT đó qua bộ đồng bộ audio. Dữ liệu bí mật không cần đi từ backend lên frontend để chọn provider hoặc nạp catalog.
 
 Migration sao chép file từ AppData NexQ cũ, kiểm tra SHA-256, tránh ghi đè khi trùng tên, rồi cập nhật cột DB. Nếu sao chép lỗi, tham chiếu cũ vẫn giữ để đọc và thử lại lần sau. Không tự xóa thư mục dữ liệu cũ.
+
+## Repository độc lập
+
+Remote `origin` của dự án phải là `https://github.com/QuangNew/Kakehashi.git`. Mở đúng thư mục **Kakehashi** trước khi Commit hoặc Pull. Thư mục thử nghiệm T_VNJP/NexQ cũ có lịch sử khác; không pull/merge toàn bộ NexQ vào Kakehashi. Khi muốn lấy bản sửa upstream, khảo sát diff và đưa từng thay đổi cần thiết vào dự án.

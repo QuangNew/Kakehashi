@@ -79,8 +79,8 @@ describe("custom API endpoint persistence", () => {
     await vi.waitFor(() => expect(overlay.getState().customLlmBaseUrl).toBe("http://127.0.0.1:8000/v1"));
     invoke.mockImplementation(async (command: string) => command === "get_api_key" ? "test-token" : null);
     await launcher.getState().activateLLMProvider("custom", { model: "meeting-model" });
-    const provider = JSON.stringify({ provider_type: "custom", base_url: "http://127.0.0.1:8000/v1", auth_type: "bearer", auth_value: "test-token" });
-    expect(invoke).toHaveBeenCalledWith("set_llm_provider", { provider });
+    const provider = JSON.stringify({ provider_type: "custom", base_url: "http://127.0.0.1:8000/v1", auth_type: "bearer" });
+    expect(invoke).toHaveBeenCalledWith("set_llm_provider", { provider, modelId:"meeting-model" });
     expect(saved.get("customLlmBaseUrl")).toBe("http://127.0.0.1:8000/v1");
     expect(JSON.stringify([...saved.values()])).not.toContain("test-token");
     invoke.mockClear();
@@ -96,7 +96,8 @@ describe("custom API endpoint persistence", () => {
     invoke.mockImplementation(async () => "old-token");
     await window.getState().activateLLMProvider("custom", { model: "meeting-model" });
     expect(invoke).toHaveBeenCalledWith("set_llm_provider", {
-      provider: JSON.stringify({ provider_type: "custom", base_url: "http://127.0.0.1:8000/v1" }),
+      provider: JSON.stringify({ provider_type: "custom", base_url: "http://127.0.0.1:8000/v1", auth_type: "none" }),
+      modelId:"meeting-model",
     });
   });
 });
@@ -229,16 +230,15 @@ describe("configStore: active LLM across windows", () => {
 
     // Settings (launcher) → Claude.
     await launcher.getState().activateLLMProvider("claude_cli");
-    expect(invoke).toHaveBeenCalledWith("set_llm_provider", { provider: JSON.stringify({ provider_type: "claude_cli" }) });
-    expect(invoke).toHaveBeenCalledWith("set_active_model", { provider: "claude_cli", modelId: "haiku" });
+    expect(invoke).toHaveBeenCalledWith("set_llm_provider", { provider: JSON.stringify({ provider_type: "claude_cli" }),modelId:"haiku" });
+    expect(invoke).not.toHaveBeenCalledWith("get_api_key", expect.anything());
     await vi.waitFor(() => expect(overlay.getState().llmProvider).toBe("claude_cli"));
-    expect(launcher.getState().verifiedCloudProviders).toContain("claude_cli");
+
 
     // Footer (overlay) → back to Ollama with its last model.
     await overlay.getState().activateLLMProvider("ollama");
     await vi.waitFor(() => expect(launcher.getState().llmProvider).toBe("ollama"));
     expect(launcher.getState().llmModel).toBe("llama3.2");
-    expect(invoke.mock.calls.filter(([command]) => command === "set_active_model").slice(-1)[0])
-      .toEqual(["set_active_model", { provider: "ollama", modelId: "llama3.2" }]);
+    expect(invoke).toHaveBeenCalledWith("set_llm_provider", {provider:JSON.stringify({provider_type:"ollama"}),modelId:"llama3.2"});
   });
 });

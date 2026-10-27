@@ -14,6 +14,10 @@ import { useTheme } from "./hooks/useTheme";
 import { useGlobalShortcut } from "./hooks/useGlobalShortcut";
 import { useTranslation } from "./hooks/useTranslation";
 import { useModelDownload } from "./hooks/useModelDownload";
+import { useApiPoolSync } from "./hooks/useApiPoolSync";
+import { useModelPreparation } from "./hooks/useModelPreparation";
+import { ApiPoolDialogs } from "./components/ApiPoolDialogs";
+import { useApiPoolStore } from "./stores/apiPoolStore";
 import { useTraySync } from "./hooks/useTraySync";
 import { useTranslationStore } from "./stores/translationStore";
 import { CallLogPanel } from "./calllog";
@@ -26,6 +30,8 @@ import { showLauncherWindow, showOverlayWindow } from "./lib/windows";
 import { emitOverlayMeetingReady, onOverlayMeetingReady } from "./lib/events";
 
 function App() {
+  useApiPoolSync();
+  useModelPreparation();
   // Keep all model progress events observed while settings tabs are unmounted.
   useModelDownload();
   const currentView = useMeetingStore((s) => s.currentView);
@@ -181,6 +187,8 @@ function App() {
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        const pool=useApiPoolStore.getState();
+        if(e.defaultPrevented || pool.dialogOpen || pool.missingProvider)return;
         if (currentView === "settings") {
           // Return to the view settings was opened from
           setCurrentView(previousView || "launcher");
@@ -314,6 +322,7 @@ function App() {
         </ErrorBoundary>
         <ActiveMeetingProvider isLauncherWindow={false} />
         <ToastContainer />
+        <ApiPoolDialogs />
       </div>
     );
   }
@@ -350,6 +359,7 @@ function App() {
       </ErrorBoundary>
       <ActiveMeetingProvider isLauncherWindow={isLauncherWindow} />
       <ToastContainer />
+      <ApiPoolDialogs />
       <SelectionToolbar />
       {/* Call log panel is now integrated into the overlay flex layout above */}
 

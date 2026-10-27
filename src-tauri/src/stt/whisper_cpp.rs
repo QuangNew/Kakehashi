@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex, OnceLock, RwLock, Weak};
+use std::sync::{Arc, Condvar, Mutex, OnceLock, RwLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::{mpsc, oneshot};
 
@@ -23,8 +23,16 @@ const MAX_PENDING_SAMPLES: usize = SAMPLE_RATE * 12;
 struct SharedWhisper {
     context: whisper_rs::WhisperContext,
     inference: Mutex<()>,
+    warmed: AtomicBool,
 }
-static WHISPER_MODELS: OnceLock<Mutex<HashMap<String, Weak<SharedWhisper>>>> = OnceLock::new();
+static WHISPER_MODELS: OnceLock<Mutex<HashMap<String, Arc<SharedWhisper>>>> = OnceLock::new();
+
+pub fn release_cached_models() {
+    if let Some(pool)=WHISPER_MODELS.get(){if let Ok(mut pool)=pool.lock(){pool.clear();}}
+}
+pub fn cached_model_count() -> usize {
+    WHISPER_MODELS.get().and_then(|pool|pool.lock().ok().map(|pool|pool.len())).unwrap_or(0)
+}
 
 fn shared_context(
     model: &std::path::Path, options: whisper_rs::WhisperContextParameters<'static>,
@@ -34,12 +42,13 @@ fn shared_context(
     let metadata = path.metadata().map_err(|e| e.to_string())?;
     let key = format!("{}:{:?}:{}:{backend}:{device:?}", path.display(), metadata.modified().ok(), metadata.len());
     let mut pool = WHISPER_MODELS.get_or_init(|| Mutex::new(HashMap::new())).lock().map_err(|e| e.to_string())?;
-    pool.retain(|_, weak| weak.strong_count() > 0);
-    if let Some(context) = pool.get(&key).and_then(Weak::upgrade) { return Ok(context); }
+    if let Some(context) = pool.get(&key) { return Ok(context.clone()); }
+    // Keep the last idle model, but release it before loading a different one.
+    pool.retain(|_, context| Arc::strong_count(context)>1);
     let context = whisper_rs::WhisperContext::new_with_params(path.to_str().ok_or("Invalid model path")?, options)
         .map_err(|e| e.to_string())?;
-    let shared = Arc::new(SharedWhisper { context, inference: Mutex::new(()) });
-    pool.insert(key, Arc::downgrade(&shared));
+    let shared = Arc::new(SharedWhisper { context, inference: Mutex::new(()), warmed: AtomicBool::new(false) });
+    pool.insert(key, shared.clone());
     Ok(shared)
 }
 
@@ -292,7 +301,7 @@ impl STTProvider for WhisperCppSTT {
                     return;
                 }
             };
-            if backend == "Vulkan" {
+            if backend == "Vulkan" && !ctx.warmed.load(Ordering::Acquire) {
                 // Vulkan compiles its pipelines lazily. Warm both encoder and
                 // decoder before capture starts, so a first-run shader compile
                 // cannot consume the live queue or discard the opening speech.
@@ -312,9 +321,12 @@ impl STTProvider for WhisperCppSTT {
                         .set_abort_callback_user_data(Arc::as_ptr(&stop) as *mut std::ffi::c_void);
                 }
                 let _inference = ctx.inference.lock().unwrap();
+                if !ctx.warmed.load(Ordering::Acquire) {
                 if let Err(error) = state.full(warmup, &vec![0.0; SAMPLE_RATE]) {
                     let _ = ready_tx.send(Err(format!("Cannot prepare Whisper GPU: {error}")));
                     return;
+                }
+                ctx.warmed.store(true,Ordering::Release);
                 }
             }
             origin_ms.store(epoch_ms(), Ordering::Release);

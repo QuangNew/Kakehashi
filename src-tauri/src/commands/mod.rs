@@ -9,6 +9,7 @@ pub mod local_model_commands;
 pub mod meeting_chat_commands;
 pub mod meeting_commands;
 pub mod model_commands;
+pub mod preparation_commands;
 pub mod rag_commands;
 pub mod recording_commands;
 pub mod settings_commands;

@@ -1,3 +1,6 @@
+import { selectedCredential } from "../lib/apiPool";
+import { isChatModel } from "../lib/chatModels";
+import { useApiPoolStore } from "../stores/apiPoolStore";
 import { RealtimePerformanceStatus } from './RealtimePerformanceStatus';
 // Shared service status bar used in both Dashboard and Meeting Overlay footers.
 // Shows LLM, You STT, and Them STT with provider + model, lighting up when active.
@@ -13,7 +16,7 @@ import { useStreamStore } from "../stores/streamStore";
 import { useMeetingStore } from "../stores/meetingStore";
 import { useSpeakerStore } from "../stores/speakerStore";
 import { useAudioLevel } from "../hooks/useAudioLevel";
-import { hasApiKey, listLocalSTTEngines, getApiKey } from "../lib/ipc";
+import { listLocalSTTEngines } from "../lib/ipc";
 import type { STTProviderType, LLMProviderType, LocalSTTEngineInfo } from "../lib/types";
 import { showToast } from "../stores/toastStore";
 import { useAgentStore } from "../stores/agentStore";
@@ -610,7 +613,7 @@ function STTPickerDropdown({
   otherPartyLabel: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [apiKeyStatus, setApiKeyStatus] = useState<Record<string, boolean>>({});
+  const pool=useApiPoolStore(s=>s.snapshot);
   const [localEngines, setLocalEngines] = useState<LocalSTTEngineInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [stealTarget, setStealTarget] = useState<STTProviderType | null>(null);
@@ -620,19 +623,10 @@ function STTPickerDropdown({
     let cancelled = false;
     (async () => {
       try {
-        const cloudProviders = ["deepgram", "whisper_api", "azure_speech", "groq_whisper"];
-        const [engines, ...keyResults] = await Promise.all([
-          listLocalSTTEngines(),
-          ...cloudProviders.map(async (p) => {
-            try { return { p, ok: await hasApiKey(p) }; }
-            catch { return { p, ok: false }; }
-          }),
-        ]);
-        if (cancelled) return;
-        setLocalEngines(engines);
-        const status: Record<string, boolean> = {};
-        for (const k of keyResults) status[k.p] = k.ok;
-        setApiKeyStatus(status);
+        const engines=await listLocalSTTEngines();
+        if (!cancelled) setLocalEngines(engines);
+      } catch {
+        if (!cancelled) setLocalEngines([]);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -673,8 +667,7 @@ function STTPickerDropdown({
   function isAvailable(opt: (typeof STT_PROVIDER_OPTIONS)[0]): boolean {
     if (opt.inputOnly && !isInput) return false;
     if (opt.requiresDownload) return isLocalEngineReady(opt.requiresDownload);
-    // Assume available if key status hasn't loaded yet — prevents false fallbacks
-    if (opt.requiresKey) return apiKeyStatus[opt.value] ?? true;
+    if (opt.requiresKey) return !!selectedCredential(pool,"stt",opt.value);
     return true;
   }
 
@@ -740,12 +733,12 @@ function STTPickerDropdown({
   }
 
   const localOpts = STT_PROVIDER_OPTIONS.filter((o) => !o.isCloud && isAvailable(o));
-  const cloudOpts = STT_PROVIDER_OPTIONS.filter((o) => o.isCloud && isAvailable(o));
+  const cloudOpts = STT_PROVIDER_OPTIONS.filter((o) => o.isCloud);
 
   return (
     <div
       ref={ref}
-      className="absolute bottom-full left-0 mb-2 min-w-[200px] rounded-xl border border-border/30 bg-popover/90 backdrop-blur-md shadow-2xl z-50 overflow-hidden animate-in slide-in-from-bottom-2 fade-in duration-150"
+      className="absolute bottom-full left-0 mb-2 min-w-[200px] rounded-xl border border-border/30 bg-popover/90 backdrop-blur-md shadow-2xl z-50 max-h-[min(36rem,65dvh)] overflow-y-auto overscroll-contain animate-in slide-in-from-bottom-2 fade-in duration-150"
     >
       {loading ? (
         <div className="px-4 py-3 text-xs text-muted-foreground">Loading providers...</div>
@@ -767,6 +760,7 @@ function STTPickerDropdown({
                   <button
                     key={opt.value}
                     onClick={() => {
+                      if (opt.requiresKey && !isAvailable(opt)) {useApiPoolStore.getState().askForKey(opt.value);onClose();return;}
                       if (locked) {
                         setStealTarget(opt.value);
                       } else {
@@ -809,6 +803,7 @@ function STTPickerDropdown({
                   <button
                     key={opt.value}
                     onClick={() => {
+                      if (opt.requiresKey && !isAvailable(opt)) {useApiPoolStore.getState().askForKey(opt.value);onClose();return;}
                       if (locked) {
                         setStealTarget(opt.value);
                       } else {
@@ -821,7 +816,7 @@ function STTPickerDropdown({
                       selected ? "bg-primary/10 text-primary" : "text-foreground/80 hover:bg-accent/40"
                     }`}
                   >
-                    <Icon className={`h-3.5 w-3.5 shrink-0 ${selected ? "text-primary" : "text-blue-400"}`} />
+                    <Icon className={`h-3.5 w-3.5 shrink-0 ${isAvailable(opt) ? "text-success" : "text-destructive"}`} />
                     <span className="flex-1 text-left font-medium">
                       {opt.label}
                       {locked && (
@@ -902,6 +897,8 @@ function LLMPickerDropdown({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const verifiedProviders = useConfigStore((s) => s.verifiedCloudProviders);
+  const pool=useApiPoolStore(s=>s.snapshot);
+  const poolRevision=useApiPoolStore(s=>s.revision);
   const claudeCliConfig = useConfigStore((s) => s.claudeCliConfig);
   const claudeModels = useConfigStore((s) => s.claudeModels) ?? undefined;
   const claudeStatus = useAgentStore((s) => s.status);
@@ -931,15 +928,13 @@ function LLMPickerDropdown({
     (async () => {
       try {
         const { listModels } = await import("../lib/ipc");
-        const key = await getApiKey(pendingProvider).catch(() => null);
         const config = JSON.stringify({
           provider_type: pendingProvider,
-          ...(key && { api_key: key }),
         });
         const modelList = await listModels(config);
         if (cancelled) return;
         const chatModels = modelList.filter(
-          (m: { id: string }) => !EMBEDDING_PATTERNS.some((p) => m.id.toLowerCase().includes(p))
+          (m: { id: string }) => isChatModel(m.id)
         );
         setModels(chatModels.map((m: { id: string; name?: string }) => ({ id: m.id, name: m.name || m.id })));
       } catch {
@@ -949,7 +944,7 @@ function LLMPickerDropdown({
       }
     })();
     return () => { cancelled = true; };
-  }, [pendingProvider]);
+  }, [pendingProvider,poolRevision]);
 
   // Click outside / Escape to close
   useEffect(() => {
@@ -969,7 +964,7 @@ function LLMPickerDropdown({
   // Only show verified/ready providers
   const available = LLM_PROVIDER_OPTIONS.filter((o) => {
     if (o.value === "custom") return false;
-    if (o.requiresKey) return verifiedProviders.includes(o.value);
+    if (o.requiresKey) return true;
     return verifiedProviders.includes(o.value); // Local also needs verification
   });
   // Fallback: always include the current active provider
@@ -984,7 +979,7 @@ function LLMPickerDropdown({
   return (
     <div
       ref={ref}
-      className="absolute bottom-full left-0 mb-2 min-w-[240px] rounded-xl border border-border/30 bg-popover/90 backdrop-blur-md shadow-2xl z-50 overflow-hidden animate-in slide-in-from-bottom-2 fade-in duration-150"
+      className="absolute bottom-full left-0 mb-2 min-w-[240px] rounded-xl border border-border/30 bg-popover/90 backdrop-blur-md shadow-2xl z-50 max-h-[min(36rem,65dvh)] overflow-y-auto overscroll-contain animate-in slide-in-from-bottom-2 fade-in duration-150"
     >
       {/* ── Provider section ── */}
       {localOpts.length > 0 && (
@@ -1000,7 +995,7 @@ function LLMPickerDropdown({
             return (
               <button
                 key={opt.value}
-                onClick={() => setPendingProvider(opt.value)}
+                onClick={() => {if(opt.requiresKey && !selectedCredential(pool,"copilot",opt.value)){useApiPoolStore.getState().askForKey(opt.value);onClose();return;}setPendingProvider(opt.value);}}
                 className={`flex w-full items-center gap-2.5 px-3 py-2 text-xs transition-colors cursor-pointer ${
                   isPending ? "bg-primary/10 text-primary" : "text-foreground/80 hover:bg-accent/40"
                 }`}
@@ -1027,12 +1022,12 @@ function LLMPickerDropdown({
             return (
               <button
                 key={opt.value}
-                onClick={() => setPendingProvider(opt.value)}
+                onClick={() => {if(opt.requiresKey && !selectedCredential(pool,"copilot",opt.value)){useApiPoolStore.getState().askForKey(opt.value);onClose();return;}setPendingProvider(opt.value);}}
                 className={`flex w-full items-center gap-2.5 px-3 py-2 text-xs transition-colors cursor-pointer ${
                   isPending ? "bg-primary/10 text-primary" : "text-foreground/80 hover:bg-accent/40"
                 }`}
               >
-                <Icon className={`h-3.5 w-3.5 shrink-0 ${isPending ? "text-primary" : "text-blue-400"}`} />
+                <Icon className={`h-3.5 w-3.5 shrink-0 ${selectedCredential(pool,"copilot",opt.value) ? "text-success" : "text-destructive"}`} />
                 <span className="flex-1 text-left font-medium">{opt.label}</span>
                 {isActive && <span className="text-meta text-primary/80">active</span>}
               </button>

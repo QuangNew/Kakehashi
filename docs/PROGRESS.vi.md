@@ -1,6 +1,6 @@
 # Tiến độ Kakehashi
 
-Cập nhật: **26/10/2026**. Đã nâng lên **Whisper Large v3 Turbo + Hy-MT2 7B Q4**, thêm ngữ cảnh dịch và sửa tiến trình tải khi chuyển tab / modal chọn chế độ. Kiểm thử mới: **270 frontend + 264 Rust**. Podcast 90 giây, 22 lớp GPU: 39/39 bản dịch, không bỏ audio, trễ dịch trung vị/p95 1.920/3.083 ms sau cuối đoạn; chưa gồm gom đoạn tối đa 3 giây. Chi tiết và giới hạn ở [báo cáo nâng model](reports/quality-upgrade.vi.md).
+Cập nhật: **27/10/2026**. Đã thêm **API Pool**, lưu cấu hình/bản nháp, sửa cuộn chuột và thoát thiết lập nhanh, dùng lại model và chuẩn bị nền tùy chọn. Model giữ **Whisper Large v3 Turbo + Hy-MT2 7B Q4**. Kiểm thử: **292 frontend + 267 Rust**; EXE debug và GUI smoke đạt. Nạp model lần đầu **23,8 giây**, dùng lại **0,29–0,32 giây** (chỉ phần chuẩn bị model). Podcast 90 giây: 39/39 bản dịch, không bỏ audio/lỗi dịch; trễ trung vị/p95 **1.780/2.859 ms sau cuối đoạn**, CER Nhật giữ **13,87%**; chưa gồm gom đoạn tối đa 3 giây. Chi tiết ở [API Pool và khởi động](reports/api-pool-startup.vi.md), [báo cáo nâng model trước đó](reports/quality-upgrade.vi.md).
 
 | Hạng mục | Trạng thái |
 | --- | --- |
@@ -8,6 +8,9 @@ Cập nhật: **26/10/2026**. Đã nâng lên **Whisper Large v3 Turbo + Hy-MT2 
 | Model trực tiếp trong folder | Whisper.cpp trong ứng dụng; runtime llama.cpp được quản lý cho Hy-MT2, copilot GGUF và embedding |
 | AI dịch độc lập | Hy-MT2, Groq và Google AI Studio/Gemini có cấu hình riêng; giữ các provider dịch kế thừa |
 | AI copilot | Giữ local GGUF, Ollama, LM Studio, Claude CLI/subscription và các API hiện có |
+| API Pool | Lưu key một lần, chọn dùng chung hoặc riêng theo STT/dịch/copilot; nhập key cũ, trạng thái xanh/đỏ, prompt mở Pool khi thiếu |
+| Cấu hình | Ghi ngay/thử lại khi lỗi, bản nháp model/dịch giữ qua đổi tab và mở lại; áp dụng backend trước khi cập nhật trạng thái đang dùng |
+| Vào họp | Giữ trọng số Whisper và server dịch; làm nóng ngắn, chuẩn bị nền tùy chọn, giải phóng bộ nhớ thủ công |
 | Tối ưu realtime | Whisper Turbo/Vulkan chọn GPU rời, dùng chung trọng số giữa hai nguồn, chuẩn bị model trước capture, cap 3 giây, queue giới hạn và số đo trên UI |
 | Chế độ họp | Online/in-person; Meeting, Interview, Lecture, Webinar và Oral Exam |
 | Tài liệu và dữ liệu | Prompt trực tiếp/RAG local, lịch sử, ghi âm/playback; migration đường dẫn sao chép/kiểm tra trước khi cập nhật DB |

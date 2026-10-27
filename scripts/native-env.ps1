@@ -11,6 +11,9 @@ if (-not $taskClang -or -not $taskNinja) { throw 'Prepare portable libclang, CMa
 $env:LIBCLANG_PATH = $taskClang.DirectoryName
 $env:PATH = (Join-Path $taskTools 'cmake/cmake/data/bin') + ';' + $taskNinja.DirectoryName + ';' + $env:PATH
 $env:CMAKE_GENERATOR = 'Ninja'
+$env:WHISPER_BUILD_TESTS = 'OFF'
+$env:WHISPER_BUILD_EXAMPLES = 'OFF'
+$env:WHISPER_BUILD_SERVER = 'OFF'
 $env:CARGO_BUILD_JOBS = '4'
 $env:TVNJP_CXX_PATH = (Get-Command g++.exe -ErrorAction Stop).Source
 $env:WHISPER_DONT_GENERATE_BINDINGS = $null
