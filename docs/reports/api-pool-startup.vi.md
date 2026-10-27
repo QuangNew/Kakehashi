@@ -55,3 +55,5 @@ Trung vị và p95 độ trễ dịch giảm khoảng 7,3%. STT p95 tăng 23 ms 
 Repository phát triển độc lập: `https://github.com/QuangNew/Kakehashi.git`, thư mục `Kakehashi`. Các conflict người dùng gặp nằm ở thư mục T_VNJP đang merge NexQ; Git ở đó vẫn trỏ `naxhq/NexQ`. Đã sao lưu worktree/index/lịch sử trước khi xử lý, giữ nguyên model và dữ liệu. Quyền Windows chặn đổi metadata `.git` của thư mục cũ, nên cần mở workspace Kakehashi để Commit/Pull đúng repo. Không thay quyền ACL hoặc ép sửa metadata được bảo vệ.
 
 Model, log, caption/audio mẫu, dữ liệu cá nhân và bản build ở ngoài Git. Xem [hướng dẫn sử dụng](../guides/usage.vi.md) để bật chuẩn bị nền và chọn API Pool.
+
+Cập nhật sau chuyển workspace: model/runtime/công cụ đã chuyển sang Kakehashi, bản nén mã nguồn và Git được kiểm tra trước khi xóa T_VNJP. Xem [báo cáo chuyển workspace](workspace-migration.vi.md).

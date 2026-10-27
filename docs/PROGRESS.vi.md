@@ -17,6 +17,8 @@ Cập nhật: **27/10/2026**. Đã thêm **API Pool**, lưu cấu hình/bản nh
 | Thu gọn | Bỏ website/deploy, demo giả lập, updater/release upstream và Gemini Context Cache; dùng pnpm |
 | Noise Presets / Start on Login | Giữ UI/config gốc; backend xử lý nhiễu/khởi động Windows chưa nối hoàn chỉnh |
 
+Workspace và phụ thuộc local đã chuyển hoàn toàn sang Kakehashi; thư mục T_VNJP cũ đã xóa sau khi sao lưu và kiểm thử. Xem [báo cáo chuyển workspace](reports/workspace-migration.vi.md).
+
 ## Kiểm chứng trước khi tách repo — mốc 25/10, Whisper Small + Hy-MT2 1.8B
 
 - Đạt **265 test frontend**, **255 test Rust** và **14 test tích hợp Claude session giả lập**. Hai test gọi Claude thật được để `ignored`.

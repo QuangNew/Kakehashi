@@ -39,9 +39,10 @@ async fn main() -> anyhow::Result<()> {
         let ranked = nexq_lib::rag::vector_store::search_similar(&query, &[("ja-deadline".into(), embeddings[0].clone()), ("vi-deadline".into(), embeddings[1].clone()), ("lunch".into(), embeddings[2].clone())], 3);
         anyhow::ensure!(ranked.first().map(|item| item.0.as_str()) != Some("lunch"), "Cross-language retrieval selected the distractor");
         println!("{}", serde_json::json!({"kind":"embeddings", "dimensions":embeddings[0].len(), "ja_vi_similarity":similarity, "ranked":ranked}));
-        let context = whisper_rs::WhisperContext::new_with_params(root.join("models/whisper_cpp/ggml-small.bin").to_str().unwrap(), whisper_rs::WhisperContextParameters::default())?;
+        let (options,backend,device)=nexq_lib::stt::whisper_cpp::context_parameters();
+        let context = whisper_rs::WhisperContext::new_with_params(root.join("models/whisper_cpp/ggml-large-v3-turbo.bin").to_str().unwrap(), options)?;
         anyhow::ensure!(context.is_multilingual(), "Whisper model must support multiple languages");
-        println!("{}", serde_json::json!({"kind":"whisper", "multilingual":true}));
+        println!("{}", serde_json::json!({"kind":"whisper", "model":"large-v3-turbo", "multilingual":true,"backend":backend,"device":device}));
         Ok::<_, anyhow::Error>(())
     }.await;
     runtime.shutdown().await;

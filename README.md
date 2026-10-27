@@ -46,6 +46,7 @@ pnpm models:smoke   # Kiểm thử các model thật đang có
 - [Hiệu năng realtime và giới hạn phép đo](docs/reports/realtime-performance.vi.md)
 - [Nâng model Turbo/7B và sửa giao diện](docs/reports/quality-upgrade.vi.md)
 - [API Pool, lưu cấu hình và thời gian vào họp](docs/reports/api-pool-startup.vi.md)
+- [Chuyển workspace và dọn dự án cũ](docs/reports/workspace-migration.vi.md)
 - [Bản sửa upstream đã chọn](docs/reports/upstream-sync.vi.md), [hướng dẫn NexQ tham chiếu](docs/reports/upstream-user-guide/README.md)
 
 Dữ liệu ứng dụng dùng `%APPDATA%/com.tvnjp.app`. File tài liệu/ghi âm có tham chiếu từ đường dẫn NexQ cũ được sao chép và kiểm tra trước khi cập nhật DB; bản gốc và backup DB được giữ. Key API lưu qua credential manager của Windows.
