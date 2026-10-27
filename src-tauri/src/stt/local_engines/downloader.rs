@@ -45,7 +45,8 @@ pub async fn download_file(
                 Ok(result) => { completed = Some(result); break; }
                 Err(error) => {
                     if cancel.load(Ordering::Acquire) { return Err("Download cancelled".into()); }
-                    last_error = error;
+                    if !error.retryable { return Err(error.message); }
+                    last_error = error.message;
                     if attempt == 4 { break; }
                     let bytes = tokio::fs::metadata(&partial).await.map(|m| m.len()).unwrap_or(0);
                     report(bytes, 0, "retrying");
@@ -94,10 +95,23 @@ async fn cancelled(cancel: &AtomicBool) {
 #[derive(serde::Serialize, serde::Deserialize)]
 struct PartialMetadata { url: String, validator: Option<String> }
 
+struct TransferError {
+    message: String,
+    retryable: bool,
+}
+
+impl From<String> for TransferError {
+    fn from(message: String) -> Self { Self { message, retryable: true } }
+}
+
+impl From<&str> for TransferError {
+    fn from(message: &str) -> Self { message.to_owned().into() }
+}
+
 async fn transfer(
     client: &reqwest::Client, url: &str, partial: &Path, sha256: &str, cancel: &AtomicBool,
     report: &(impl Fn(u64, u64, &str) + Send + Sync),
-) -> Result<(u64, u64), String> {
+) -> Result<(u64, u64), TransferError> {
     use futures::StreamExt;
     use reqwest::header::{ACCEPT_ENCODING, CONTENT_RANGE, ETAG, IF_RANGE, LAST_MODIFIED, RANGE};
     use tokio::io::AsyncWriteExt;
@@ -135,7 +149,18 @@ async fn transfer(
         return Err("Server rejected the partial download range; retrying".into());
     }
     if !response.status().is_success() {
-        return Err(format!("Model download returned HTTP {}", response.status()));
+        let status = response.status();
+        let hint = match status {
+            reqwest::StatusCode::NOT_FOUND | reqwest::StatusCode::GONE =>
+                "The model file is unavailable at this address. Update the app or check the model source.",
+            reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN =>
+                "The server denied access to the model file.",
+            _ => "The server could not provide the model file.",
+        };
+        return Err(TransferError {
+            message: format!("Model download returned HTTP {status}. {hint}"),
+            retryable: status.is_server_error() || matches!(status.as_u16(), 408 | 425 | 429),
+        });
     }
     let total;
     if response.status() == reqwest::StatusCode::PARTIAL_CONTENT {
@@ -247,6 +272,39 @@ mod tests {
         (url, task)
     }
     fn hash(text: &str) -> String { format!("{:x}", Sha256::digest(text.as_bytes())) }
+
+    #[tokio::test]
+    async fn unavailable_model_fails_without_connection_retries_or_installing_an_error_page() {
+        for status in ["404 Not Found", "403 Forbidden", "410 Gone"] {
+            let fixture = Fixture::new();
+            let (url, task) = server(vec![format!(
+                "HTTP/1.1 {status}\r\nContent-Length: 3\r\nConnection: close\r\n\r\nbad"
+            )]).await;
+            let states = std::sync::Mutex::new(Vec::new());
+            let error = download_file(&url, &fixture.model(), "", Arc::new(AtomicBool::new(false)),
+                |_, _, state| states.lock().unwrap().push(state.to_owned())).await.unwrap_err();
+            assert!(error.contains(status));
+            assert_eq!(task.await.unwrap().len(), 1);
+            assert!(!states.lock().unwrap().iter().any(|state| state == "retrying"));
+            assert!(!fixture.model().exists());
+            assert!(!fixture.model().with_extension("download").exists());
+        }
+    }
+
+    #[tokio::test]
+    async fn temporary_server_failure_retries_and_verifies_the_model() {
+        let fixture = Fixture::new();
+        let (url, task) = server(vec![
+            "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".into(),
+            "HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nmodel".into(),
+        ]).await;
+        let states = std::sync::Mutex::new(Vec::new());
+        download_file(&url, &fixture.model(), &hash("model"), Arc::new(AtomicBool::new(false)),
+            |_, _, state| states.lock().unwrap().push(state.to_owned())).await.unwrap();
+        assert_eq!(task.await.unwrap().len(), 2);
+        assert!(states.lock().unwrap().iter().any(|state| state == "retrying"));
+        assert_eq!(std::fs::read(fixture.model()).unwrap(), b"model");
+    }
 
     #[tokio::test]
     async fn interrupted_body_is_resumed_and_verified_without_losing_existing_bytes() {

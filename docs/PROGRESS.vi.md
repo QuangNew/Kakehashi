@@ -1,6 +1,6 @@
 # Tiến độ Kakehashi
 
-Cập nhật: **27/10/2026**. Đã thêm **API Pool**, lưu cấu hình/bản nháp, sửa cuộn chuột và thoát thiết lập nhanh, dùng lại model và chuẩn bị nền tùy chọn. Model giữ **Whisper Large v3 Turbo + Hy-MT2 7B Q4**. Kiểm thử: **292 frontend + 267 Rust**; EXE debug và GUI smoke đạt. Nạp model lần đầu **23,8 giây**, dùng lại **0,29–0,32 giây** (chỉ phần chuẩn bị model). Podcast 90 giây: 39/39 bản dịch, không bỏ audio/lỗi dịch; trễ trung vị/p95 **1.780/2.859 ms sau cuối đoạn**, CER Nhật giữ **13,87%**; chưa gồm gom đoạn tối đa 3 giây. Chi tiết ở [API Pool và khởi động](reports/api-pool-startup.vi.md), [báo cáo nâng model trước đó](reports/quality-upgrade.vi.md).
+Cập nhật: **27/10/2026**. Đã thêm **API Pool**, lưu cấu hình/bản nháp, sửa cuộn chuột và thoát thiết lập nhanh, dùng lại model và chuẩn bị nền tùy chọn. Model giữ **Whisper Large v3 Turbo + Hy-MT2 7B Q4**. Kiểm thử: **292 frontend + 269 Rust**; EXE debug và GUI smoke đạt. Nạp model lần đầu **23,8 giây**, dùng lại **0,29–0,32 giây** (chỉ phần chuẩn bị model). Podcast 90 giây: 39/39 bản dịch, không bỏ audio/lỗi dịch; trễ trung vị/p95 **1.780/2.859 ms sau cuối đoạn**, CER Nhật giữ **13,87%**; chưa gồm gom đoạn tối đa 3 giây. Chi tiết ở [API Pool và khởi động](reports/api-pool-startup.vi.md), [báo cáo nâng model trước đó](reports/quality-upgrade.vi.md).
 
 | Hạng mục | Trạng thái |
 | --- | --- |
@@ -18,6 +18,14 @@ Cập nhật: **27/10/2026**. Đã thêm **API Pool**, lưu cấu hình/bản nh
 | Noise Presets / Start on Login | Giữ UI/config gốc; backend xử lý nhiễu/khởi động Windows chưa nối hoàn chỉnh |
 
 Workspace và phụ thuộc local đã chuyển hoàn toàn sang Kakehashi; thư mục T_VNJP cũ đã xóa sau khi sao lưu và kiểm thử. Xem [báo cáo chuyển workspace](reports/workspace-migration.vi.md).
+
+## Sửa tải Distil Whisper — 27/10/2026
+
+Link Distil cũ trỏ vào repo `ggerganov/whisper.cpp` không có file này, trả HTTP 404. Đã đổi sang [GGML chính thức của Distil-Whisper](https://huggingface.co/distil-whisper/distil-large-v3-ggml), ghim revision và SHA-256, sửa dung lượng thành 1.519.521.155 byte. Lỗi HTTP 404/403/410 dừng ngay và hiển thị nguyên nhân; lỗi tạm thời và mất kết nối vẫn được thử lại, giữ phần đã tải.
+
+Distil Large v3 **chỉ nhận dạng tiếng Anh**, theo [model card của tác giả](https://huggingface.co/distil-whisper/distil-large-v3). Giao diện có ghi chú rõ và không tự kích hoạt model này; Nhật–Việt tiếp tục dùng **Whisper Large v3 Turbo**. Nút Retry xuất hiện khi chưa nhận được dữ liệu; Resume dành cho phần tải dở.
+
+Kiểm chứng: **292 test frontend, 269 test Rust** đạt; build EXE Windows đạt. GUI thật tải tiếp Distil từ 1,3 GB đến đủ 1.519.521.155 byte và xác minh SHA-256 thành công, khôi phục tiến trình khi đổi tab, hiển thị Activate khi hoàn tất, không có JavaScript exception. Turbo đã được tải lại và xác minh; GUI nhận diện cả hai file và chọn Turbo, không tự chọn Distil.
 
 ## Kiểm chứng trước khi tách repo — mốc 25/10, Whisper Small + Hy-MT2 1.8B
 

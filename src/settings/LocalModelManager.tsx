@@ -26,6 +26,10 @@ interface LocalModelManagerProps {
   engineFilter?: string;
 }
 
+function isEnglishOnlyWhisper(model: LocalSTTModelInfo): boolean {
+  return model.engine === "whisper_cpp" && model.id === "distil-large-v3";
+}
+
 export function LocalModelManager({ compact, engineFilter }: LocalModelManagerProps) {
   const [engines, setEngines] = useState<LocalSTTEngineInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,7 +70,8 @@ export function LocalModelManager({ compact, engineFilter }: LocalModelManagerPr
           const engineActiveModel = activeModelPerEngine[engine.engine];
           if (!engineActiveModel) {
             const firstDownloaded = engine.models.find(
-              (m) => !m.id.startsWith("binary-") && m.is_downloaded
+              // English-only Distil must be an explicit choice in this VI/JA app.
+              (m) => !m.id.startsWith("binary-") && m.is_downloaded && !isEnglishOnlyWhisper(m)
             );
             if (firstDownloaded) {
               setActiveModelForEngine(engine.engine, firstDownloaded.id);
@@ -246,6 +251,7 @@ function ModelRow({
   onSetActive: () => void;
 }) {
   const sizeLabel = formatSize(model.size_bytes);
+  const englishOnly = isEnglishOnlyWhisper(model);
 
   return (
     <div
@@ -320,11 +326,17 @@ function ModelRow({
               className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-meta font-medium text-primary hover:bg-primary/20 disabled:opacity-50"
             >
               <Download className="h-3 w-3" />
-              {compact ? "" : progress?.status === "error" || progress?.status === "cancelled" ? "Resume" : "Download"}
+              {compact ? "" : progress?.status === "error" || progress?.status === "cancelled" ? progress.downloaded_bytes > 0 ? "Resume" : "Retry" : "Download"}
             </button>
           )}
         </div>
       </div>
+
+      {englishOnly && (
+        <p className="mt-1 text-xs text-amber-500">
+          Chỉ nhận dạng tiếng Anh. Với tiếng Việt/Nhật, chọn Whisper Large v3 Turbo.
+        </p>
+      )}
 
       {/* Download progress bar */}
       {isDownloading && progress && (
@@ -351,7 +363,7 @@ function ModelRow({
           </div>
         </div>
       )}
-      {progress?.status === "error" && <p role="alert" className="mt-1.5 break-words text-xs text-destructive">{progress.error || "Tải bị gián đoạn."} Phần đã tải được giữ; bấm Resume để tiếp tục.</p>}
+      {progress?.status === "error" && <p role="alert" className="mt-1.5 break-words text-xs text-destructive">{progress.error || "Tải bị gián đoạn."} {progress.downloaded_bytes > 0 ? "Phần đã tải được giữ; bấm Resume để tiếp tục." : "Bấm Retry để thử lại."}</p>}
     </div>
   );
 }
