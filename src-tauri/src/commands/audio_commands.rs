@@ -656,9 +656,9 @@ pub async fn start_capture_per_party(
     );
 
     tokio::spawn(relay_party_transcripts(app.clone(), you_stt_rx,
-        format!("you_{}", session_prefix), "User", you.stt_provider.clone()));
+        format!("you_{}", session_prefix), "User", you.stt_provider.clone(), capture_origin_ms));
     tokio::spawn(relay_party_transcripts(app.clone(), them_stt_rx,
-        format!("them_{}", session_prefix), remote_speaker, them.stt_provider.clone()));
+        format!("them_{}", session_prefix), remote_speaker, them.stt_provider.clone(), capture_origin_ms));
 
     // Grab the recorder handle for WAV recording (with mic/system mixing)
     let recorder = {
@@ -1068,12 +1068,23 @@ fn direct_output(result: crate::stt::provider::TranscriptResult, counter: &mut u
         timestamp_ms: result.timestamp_ms, is_final: result.is_final, confidence: result.confidence }
 }
 
+/// UI, persistence and playback all consume epoch milliseconds. Some native
+/// recognizers (including Whisper) report offsets from capture instead.
+fn transcript_epoch_ms(timestamp_ms: u64, capture_origin_ms: u64) -> u64 {
+    if timestamp_ms < 1_000_000_000_000 {
+        capture_origin_ms.saturating_add(timestamp_ms)
+    } else {
+        timestamp_ms
+    }
+}
+
 async fn relay_party_transcripts(
     app: AppHandle,
     mut receiver: mpsc::Receiver<crate::stt::provider::TranscriptResult>,
     namespace: String,
     speaker: &'static str,
     provider: String,
+    capture_origin_ms: u64,
 ) {
     let state = app.state::<AppState>();
     let pause = state.pause_threshold_ms.clone();
@@ -1094,7 +1105,8 @@ async fn relay_party_transcripts(
         }
     };
     let mut counter = 0;
-    while let Some(result) = receiver.recv().await {
+    while let Some(mut result) = receiver.recv().await {
+        result.timestamp_ms = transcript_epoch_ms(result.timestamp_ms, capture_origin_ms);
         if let Some(accumulator) = &mut accumulator {
             accumulator.set_pause_threshold(pause.load(Ordering::Relaxed));
             for output in accumulator.feed_result(result) { publish(output); }
@@ -1108,6 +1120,16 @@ async fn relay_party_transcripts(
 #[cfg(test)]
 mod room_config_tests {
     use super::*;
+    #[test]
+    fn relative_transcripts_advance_on_the_shared_capture_clock_and_keep_epoch_results() {
+        let origin = 1_790_000_000_000;
+        assert_eq!(transcript_epoch_ms(0, origin), origin);
+        assert_eq!(transcript_epoch_ms(12_345, origin) - origin, 12_345);
+        assert_eq!(transcript_epoch_ms(65_432, origin) - origin, 65_432);
+        assert_eq!(transcript_epoch_ms(origin + 12_345, origin), origin + 12_345);
+        // Capture can restart mid-meeting or after a mute gap.
+        assert_eq!(transcript_epoch_ms(2_000, origin + 60_000) - origin, 62_000);
+    }
     #[test]
     fn room_uses_one_microphone_and_preserves_the_selected_room_stt() {
         let you = serde_json::from_str(r#"{"role":"You","device_id":"shared-mic","is_input_device":true,"stt_provider":"whisper_cpp","language":"vi-VN"}"#).unwrap();

@@ -50,6 +50,7 @@ export function TranscriptLine({ segment, searchQuery }: TranscriptLineProps) {
 
   // Translation store subscriptions
   const translations = useTranslationStore((s) => s.translations);
+  const partialTranslations = useTranslationStore((s) => s.partialTranslations);
   const translating = useTranslationStore((s) => s.translating);
   const displayMode = useTranslationStore((s) => s.displayMode);
   const autoTranslateActive = useTranslationStore((s) => s.autoTranslateActive);
@@ -65,7 +66,8 @@ export function TranscriptLine({ segment, searchQuery }: TranscriptLineProps) {
   const direction = useTranslationStore((s) => s.direction);
   const sourceLang = useTranslationStore((s) => s.sourceLang);
   const targetLang = useTranslationStore((s) => s.targetLang);
-  const translation = selectTranslation(translations, segment, bidirectional, direction, sourceLang, targetLang);
+  const translation = selectTranslation(translations, segment, bidirectional, direction, sourceLang, targetLang)
+    ?? selectTranslation(partialTranslations, segment, bidirectional, direction, sourceLang, targetLang);
   const isTranslating = translating.has(segment.id);
 
   // Resolve speaker ID — prefer explicit speaker_id, fall back to speaker field
@@ -327,10 +329,10 @@ export function TranscriptLine({ segment, searchQuery }: TranscriptLineProps) {
         {/* Inline translation — visible below the original text */}
         {displayMode === "inline" && (
           <div className="mt-1 leading-[1.5]" style={{ fontSize: `${translationFontSize}px`, color: translationTextColor }}>
-            {isTranslating ? (
+            {translation ? (
+              <span aria-busy={isTranslating}>{translation.translated_text}</span>
+            ) : isTranslating ? (
               <span className="text-muted-foreground/40 animate-pulse">Translating...</span>
-            ) : translation ? (
-              translation.translated_text
             ) : null}
           </div>
         )}

@@ -251,6 +251,10 @@ export function onTranslationResult(handler: (result: TranslationResult) => void
   return listen<TranslationResult>("translation_result", (e) => handler(e.payload));
 }
 
+export function onTranslationPartial(handler: (result: TranslationResult) => void): Promise<UnlistenFn> {
+  return listen<TranslationResult>("translation_partial", (e) => handler(e.payload));
+}
+
 export function onTranslationError(handler: (error: { segment_id?: string; error: string }) => void): Promise<UnlistenFn> {
   return listen<{ segment_id?: string; error: string }>("translation_error", (e) => handler(e.payload));
 }

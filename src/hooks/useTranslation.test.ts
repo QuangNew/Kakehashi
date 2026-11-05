@@ -2,13 +2,14 @@ import { act, renderHook, cleanup } from "@testing-library/react";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import type { Meeting, TranscriptSegment, TranslationResult } from "../lib/types";
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn(), final: undefined as undefined | ((event: { segment: TranscriptSegment }) => void) }));
+const mocks = vi.hoisted(() => ({ invoke: vi.fn(), final: undefined as undefined | ((event: { segment: TranscriptSegment }) => void), partial: undefined as undefined | ((result: TranslationResult) => void) }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("@tauri-apps/plugin-store", () => ({ load: vi.fn(async () => ({ set: vi.fn(), get: vi.fn(), onKeyChange: vi.fn() })) }));
 vi.mock("../lib/ipc", () => ({ getAllMeetingTranslations: vi.fn(async () => []), setTranslationLanguages: vi.fn(async () => {}) }));
 vi.mock("../lib/events", () => ({
   onTranscriptFinal: vi.fn(async (callback) => { mocks.final = callback; return vi.fn(); }),
   onTranslationResult: vi.fn(async () => vi.fn()), onTranslationError: vi.fn(async () => vi.fn()),
+  onTranslationPartial: vi.fn(async callback => { mocks.partial = callback; return vi.fn(); }),
   onBatchTranslationProgress: vi.fn(async () => vi.fn()),
 }));
 vi.mock("../stores/meetingStore", async () => {
@@ -36,6 +37,27 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe("live bilingual translation lifecycle", () => {
+  it("previews the current stream without saving it, rejecting old revisions and removing a failed preview", async () => {
+    let fail!: (error: Error) => void;
+    mocks.invoke.mockImplementation((command, args) => {
+      if (command === "begin_live_translation") return Promise.resolve(`session-${args.meetingId}`);
+      if (command === "translate_live_segment") return new Promise((_, reject) => { fail = reject; });
+      return Promise.resolve(null);
+    });
+    renderHook(() => useTranslation()); await act(async () => {});
+    await act(async () => { mocks.final?.({ segment: line("stream", "Them", "自然な日本語") }); await vi.advanceTimersByTimeAsync(50); });
+    const request = requestCalls()[0][1];
+    const preview: TranslationResult = { meeting_id: "meeting", request_id: request.requestId, segment_id: "stream", original_text: request.text, translated_text: "Tiếng Nhật", source_lang: "ja", target_lang: "vi", provider: "hy-mt" };
+    await act(async () => { mocks.partial?.({ ...preview, request_id: "old" }); });
+    expect(useTranslationStore.getState().partialTranslations.size).toBe(0);
+    await act(async () => { mocks.partial?.(preview); });
+    expect(useTranslationStore.getState().partialTranslations.get("stream:vi")?.translated_text).toBe("Tiếng Nhật");
+    expect(useTranslationStore.getState().translations.size).toBe(0);
+    expect(useTranslationStore.getState().translating.has("stream")).toBe(true);
+    await act(async () => { fail(new Error("Interrupted stream")); });
+    expect(useTranslationStore.getState().partialTranslations.size).toBe(0);
+    expect(useTranslationStore.getState().translations.size).toBe(0);
+  });
   it("sends the correct source and target for both audio sides", async () => {
     renderHook(() => useTranslation());
     await act(async () => {});

@@ -4,6 +4,7 @@ pub mod context;
 pub mod credentials;
 pub mod data_paths;
 pub mod db;
+mod diagnostics;
 pub mod intelligence;
 pub mod llm;
 pub mod local_runtime;
@@ -127,6 +128,7 @@ fn enable_live_blur_behind(hwnd_raw: *mut std::ffi::c_void) {
 
 /// Show the launcher window and hide the overlay window.
 fn show_launcher(app: &tauri::AppHandle) {
+    log::info!("Showing launcher window");
     if let Some(launcher) = app.get_webview_window("launcher") {
         let _ = launcher.show();
         let _ = launcher.unminimize();
@@ -139,6 +141,7 @@ fn show_launcher(app: &tauri::AppHandle) {
 
 /// Show the overlay window and hide the launcher window.
 fn show_overlay(app: &tauri::AppHandle) {
+    log::info!("Showing overlay window");
     if let Some(overlay) = app.get_webview_window("overlay") {
         let _ = overlay.show();
         let _ = overlay.set_focus();
@@ -168,6 +171,7 @@ fn show_for_second_launch(app: &tauri::AppHandle) {
 
 /// Hide all windows (minimize to tray).
 fn hide_all(app: &tauri::AppHandle) {
+    log::info!("Hiding windows to tray");
     if let Some(launcher) = app.get_webview_window("launcher") {
         let _ = launcher.hide();
     }
@@ -178,14 +182,13 @@ fn hide_all(app: &tauri::AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Initialize env_logger so all log::info/warn/error macros produce output.
-    // Without this, every log statement in the backend is a no-op.
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    diagnostics::initialize();
 
     tauri::Builder::default()
         // Must be first: a second launch forwards to this process and exits,
         // preventing duplicate tray icons.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            log::info!("Second launch received; restoring the existing window");
             show_for_second_launch(app);
         }))
         .plugin(tauri_plugin_dialog::init())
@@ -197,6 +200,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .setup(|app| {
+            log::info!("Initializing desktop services before creating webviews");
             let mut app_state = AppState::new();
 
             // -- Initialize DatabaseManager --
@@ -421,6 +425,13 @@ pub fn run() {
 
             app.manage(app_state);
 
+            // React restores settings and invokes commands immediately on load.
+            // Create both webviews only once all their managed services exist.
+            for config in app.config().app.windows.iter().filter(|config| !config.create) {
+                tauri::WebviewWindowBuilder::from_config(app, config)?
+                    .visible(false).build()?;
+            }
+
             // -- Initialize TrayManager (non-fatal — app works without enhanced tray) --
             match tray::IconSet::new(include_bytes!("../icons/kakehashi/icon.png")) {
                 Ok(icon_set) => {
@@ -550,7 +561,8 @@ pub fn run() {
                 }
             }
 
-            log::info!("NexQ initialized successfully");
+            show_launcher(app.handle());
+            log::info!("Kakehashi initialized successfully; launcher shown");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -724,12 +736,14 @@ pub fn run() {
             // downloaded update first (exits inside the call on success), or
             // defer the quit while the last recording is still saving.
             if let tauri::RunEvent::ExitRequested { code, api, .. } = &event {
+                log::info!("Desktop exit requested; code={code:?}");
                 if *code != Some(tauri::RESTART_EXIT_CODE) {
                     lifecycle::on_exit_requested(app, api);
                 }
             }
             // Stop only model servers owned by this application.
             if let tauri::RunEvent::Exit = &event {
+                log::info!("Desktop exiting; stopping owned model servers");
                 tauri::async_runtime::block_on(app.state::<AppState>().local_runtime.shutdown());
                 let sessions = app.state::<AppState>().agent_sessions.clone();
                 tauri::async_runtime::block_on(sessions.close_all());

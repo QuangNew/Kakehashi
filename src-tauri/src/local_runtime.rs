@@ -345,6 +345,15 @@ impl LocalRuntime {
             .kill_on_drop(true);
         if role == ModelRole::Translation {
             command.args(["--threads","8","--threads-batch","8","--batch-size","256","--ubatch-size","128"]);
+            // With partial Vulkan offload on Windows, mapping the whole 7B
+            // model can keep several extra GiB resident alongside Whisper.
+            // The bundled runtime supports bounded host loading via this env
+            // setting; older runtimes simply ignore it. Respect manual overrides.
+            if cfg!(windows) && settings.gpu_layers > 0
+                && std::env::var_os("LLAMA_ARG_LOAD_MODE").is_none()
+            {
+                command.env("LLAMA_ARG_LOAD_MODE", "none");
+            }
         }
         if role == ModelRole::Embeddings {
             command.args(["--embedding", "--pooling", "last"]);

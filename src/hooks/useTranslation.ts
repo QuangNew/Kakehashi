@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { onTranslationResult, onTranslationError, onBatchTranslationProgress, onTranscriptFinal } from "../lib/events";
+import { onTranslationResult, onTranslationPartial, onTranslationError, onBatchTranslationProgress, onTranscriptFinal } from "../lib/events";
 import { getAllMeetingTranslations } from "../lib/ipc";
 import { routeTranslation } from "../lib/translationRouting";
 import { useTranslationStore } from "../stores/translationStore";
@@ -64,6 +64,11 @@ export function useTranslation(liveOwner = true) {
     const timers = new Map<string, ReturnType<typeof setTimeout>>();
     const revisions = new Map<string, string>();
     const store = useTranslationStore.getState;
+    const partialListener = onTranslationPartial(result => {
+      if (disposed || result.meeting_id !== meetingId || !result.segment_id || !result.request_id) return;
+      if (revisions.get(`${result.segment_id}:${result.target_lang}`) !== result.request_id) return;
+      store().addPartialTranslation(result);
+    });
     store().setLastError(null);
     const session = invoke<string>("begin_live_translation", { meetingId }).then((id) => {
       sessionId = id;
@@ -114,6 +119,7 @@ export function useTranslation(liveOwner = true) {
       for (const timer of timers.values()) clearTimeout(timer);
       for (const key of revisions.keys()) store().setTranslating(key.slice(0, key.lastIndexOf(":")), false);
       listener.then((unlisten) => unlisten()).catch(console.error);
+      partialListener.then((unlisten) => unlisten()).catch(console.error);
       if (sessionId) void invoke("end_live_translation", { sessionId }).catch(console.error);
     };
   }, [meetingId, active, bidirectional, direction, source, target, provider, liveOwner]);

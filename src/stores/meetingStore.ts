@@ -201,7 +201,8 @@ export const useMeetingStore = create<MeetingState>((set, get) => ({
       set({
         activeMeeting: meeting,
         isRecording: true,
-        meetingStartTime: now,
+        meetingStartTime: Number.isFinite(Date.parse(meeting.start_time))
+          ? Date.parse(meeting.start_time) : now,
         elapsedMs: 0,
         lastPersistedIndex: 0,
         // Reset lingering per-view state from the previous meeting

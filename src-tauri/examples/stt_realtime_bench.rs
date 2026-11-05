@@ -170,14 +170,16 @@ async fn main() -> anyhow::Result<()> {
         let mut context = Vec::new();
         while let Some((text, audio_end, segment, queued)) = translation_rx.recv().await {
             let called = Instant::now();
-            match translator.translate_with_context(&text, Some("ja"), "vi", &context).await {
+            let first_token_ms = std::sync::OnceLock::new();
+            let progress = |_: &str| { first_token_ms.get_or_init(|| called.elapsed().as_millis()); };
+            match translator.translate_stream_with_context(&text, Some("ja"), "vi", &context, &progress).await {
                 Ok(result) => {
                     translated += 1;
                     context.push(nexq_lib::translation::TranslationContextTurn { source_text: text.clone(), translated_text: result.clone() });
                     if context.len() > 2 { context.remove(0); }
                     println!(
                         "{}",
-                        serde_json::json!({"kind":"translation", "segment":segment, "chars":result.chars().count(), "text":include_text.then_some(&result), "elapsed_ms":start.elapsed().as_millis(), "inference_ms":called.elapsed().as_millis(), "queue_ms":called.duration_since(queued).as_millis(), "lag_ms":audio_end.map(|end| (start.elapsed().as_millis() as u64).saturating_sub(end))})
+                        serde_json::json!({"kind":"translation", "segment":segment, "chars":result.chars().count(), "text":include_text.then_some(&result), "elapsed_ms":start.elapsed().as_millis(), "inference_ms":called.elapsed().as_millis(), "queue_ms":called.duration_since(queued).as_millis(), "first_token_ms":first_token_ms.get(), "first_text_after_audio_ms":first_token_ms.get().zip(audio_end).map(|(first,end)| (called.duration_since(start).as_millis() as u64 + *first as u64).saturating_sub(end)), "lag_ms":audio_end.map(|end| (start.elapsed().as_millis() as u64).saturating_sub(end))})
                     );
                 }
                 Err(error) => println!(

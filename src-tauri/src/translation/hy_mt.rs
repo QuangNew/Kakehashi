@@ -73,6 +73,12 @@ impl TranslationProvider for HyMtTranslator {
         &self, text: &str, source: Option<&str>, target: &str,
         context: &[TranslationContextTurn],
     ) -> Result<String, TranslationError> {
+        self.translate_stream_with_context(text, source, target, context, &|_| {}).await
+    }
+    async fn translate_stream_with_context(
+        &self, text: &str, source: Option<&str>, target: &str,
+        context: &[TranslationContextTurn], progress: &(dyn for<'text> Fn(&'text str) + Send + Sync),
+    ) -> Result<String, TranslationError> {
         let prompt = super::prompt::local_prompt(text, source, target, context)?;
         let runtime = self.runtime.clone();
         let endpoint = tokio::spawn(async move { runtime.ensure(ModelRole::Translation).await })
@@ -80,39 +86,16 @@ impl TranslationProvider for HyMtTranslator {
             .map_err(|e| TranslationError::Failed(e.to_string()))?
             .map_err(TranslationError::NotConfigured)?;
         let response = self.client.post(format!("{}/chat/completions", endpoint)).json(&serde_json::json!({
-            "model": "translation", "stream": false,
+            "model": "translation", "stream": true,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.7, "top_p": 0.6, "top_k": 20, "repeat_penalty": 1.05, "max_tokens": 512
         })).send().await.map_err(|e| TranslationError::Http(e.to_string()))?;
-        let status = response.status();
-        let body: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| TranslationError::Failed(e.to_string()))?;
-        if !status.is_success() {
+        if !response.status().is_success() {
             return Err(TranslationError::Failed(format!(
-                "Local translation server ({}): {}",
-                status, body
+                "Local translation server returned {}", response.status()
             )));
         }
-        let choice = body["choices"]
-            .get(0)
-            .ok_or_else(|| TranslationError::Failed("No translation returned".into()))?;
-        if choice["finish_reason"] == "length" {
-            return Err(TranslationError::Failed(
-                "Translation exceeded its output limit; use a shorter transcript segment".into(),
-            ));
-        }
-        let translated = choice["message"]["content"]
-            .as_str()
-            .unwrap_or_default()
-            .trim();
-        if translated.is_empty() {
-            return Err(TranslationError::Failed(
-                "Local model returned an empty translation".into(),
-            ));
-        }
-        Ok(translated.to_owned())
+        super::stream::read(response, progress).await
     }
     async fn detect_language(&self, _text: &str) -> Result<DetectedLanguage, TranslationError> {
         Err(TranslationError::NotConfigured(

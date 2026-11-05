@@ -160,7 +160,8 @@ function App() {
           audioMode,
           aiScenario,
           isRecording: true,
-          meetingStartTime: startedAt,
+          meetingStartTime: Number.isFinite(Date.parse(meeting.start_time))
+            ? Date.parse(meeting.start_time) : startedAt,
           elapsedMs: 0,
           lastPersistedIndex: 0,
           selectedMeetingId: null,

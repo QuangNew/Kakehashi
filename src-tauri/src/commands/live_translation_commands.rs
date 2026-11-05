@@ -44,6 +44,7 @@ pub async fn translate_live_segment(
         permit = state.live_translations.gate.clone().acquire_owned() => permit.map_err(|e| e.to_string())?,
     };
     let started = std::time::Instant::now();
+    let first_token_ms = std::sync::OnceLock::new();
     let queue_ms = queued_at.elapsed().as_millis() as u64;
     let work = async {
         let (provider, name) = {
@@ -59,8 +60,18 @@ pub async fn translate_live_segment(
             )
         };
         let context = state.live_translations.context(&ticket, &source_lang, &target_lang);
+        let progress = |translated: &str| {
+            first_token_ms.get_or_init(|| started.elapsed().as_millis() as u64);
+            state.live_translations.publish_current(&ticket, || {
+                let _ = app.emit("translation_partial", serde_json::json!({
+                    "meeting_id":meeting_id, "request_id":request_id, "segment_id":segment_id,
+                    "original_text":text, "translated_text":translated,
+                    "source_lang":source_lang, "target_lang":target_lang, "provider":name,
+                }));
+            });
+        };
         let translated = provider
-            .translate_with_context(&text, Some(&source_lang), &target_lang, &context)
+            .translate_stream_with_context(&text, Some(&source_lang), &target_lang, &context, &progress)
             .await
             .map_err(|e| e.to_string())?;
         Ok::<_, String>((translated, name))
@@ -112,6 +123,7 @@ pub async fn translate_live_segment(
             let _ = app.emit("translation_result", &result);
             let _ = app.emit("translation_performance", serde_json::json!({
                 "meeting_id":meeting_id, "queue_ms":queue_ms, "inference_ms":inference_ms,
+                "first_token_ms":first_token_ms.get(),
             }));
         }
     });

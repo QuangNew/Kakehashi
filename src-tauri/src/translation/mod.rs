@@ -7,6 +7,7 @@ pub mod opus_mt_registry;
 pub mod opus_mt_manager;
 pub mod llm_provider;
 pub mod hy_mt;
+mod stream;
 pub mod api;
 pub mod live;
 pub mod prompt;
@@ -130,6 +131,13 @@ pub trait TranslationProvider: Send + Sync {
         _context: &[TranslationContextTurn],
     ) -> Result<String, TranslationError> {
         self.translate(text, source, target).await
+    }
+
+    async fn translate_stream_with_context(
+        &self, text: &str, source: Option<&str>, target: &str,
+        context: &[TranslationContextTurn], _progress: &(dyn for<'text> Fn(&'text str) + Send + Sync),
+    ) -> Result<String, TranslationError> {
+        self.translate_with_context(text, source, target, context).await
     }
 
     async fn translate_batch(

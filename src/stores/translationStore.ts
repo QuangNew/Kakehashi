@@ -46,6 +46,7 @@ interface TranslationState {
   // Session state (not persisted)
   autoTranslateActive: boolean; // current session toggle
   translations: Map<string, TranslationResult>; // segmentId:targetLang → result
+  partialTranslations: Map<string, TranslationResult>; // Live preview only; never persisted.
   translating: Set<string>; // segmentIds currently being translated
   batchProgress: { completed: number; total: number } | null;
 
@@ -59,6 +60,7 @@ interface TranslationState {
   setCacheEnabled: (enabled: boolean) => void;
   setAutoTranslateActive: (active: boolean) => void;
   addTranslation: (result: TranslationResult) => void;
+  addPartialTranslation: (result: TranslationResult) => void;
   addTranslations: (results: TranslationResult[]) => void;
   setTranslating: (segmentId: string, isTranslating: boolean) => void;
   setBatchProgress: (progress: { completed: number; total: number } | null) => void;
@@ -104,6 +106,7 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
   // Session defaults
   autoTranslateActive: false,
   translations: new Map(),
+  partialTranslations: new Map(),
   translating: new Set(),
   batchProgress: null,
 
@@ -143,14 +146,24 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
   },
   setAutoTranslateActive: (active) => set({ autoTranslateActive: active }),
 
+  addPartialTranslation: (result) => {
+    if (!result.segment_id) return;
+    set(state => {
+      const partialTranslations = new Map(state.partialTranslations);
+      partialTranslations.set(translationKey(result.segment_id!, result.target_lang), result);
+      return { partialTranslations };
+    });
+  },
   addTranslation: (result) => {
     if (!result.segment_id) return;
     set((state) => {
       const updated = new Map(state.translations);
       updated.set(translationKey(result.segment_id!, result.target_lang), result);
       const translating = new Set(state.translating);
+      const partialTranslations = new Map(state.partialTranslations);
+      partialTranslations.delete(translationKey(result.segment_id!, result.target_lang));
       translating.delete(result.segment_id!);
-      return { translations: updated, translating };
+      return { translations: updated, translating, partialTranslations };
     });
   },
   addTranslations: (results) => {
@@ -171,11 +184,15 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
       const updated = new Set(state.translating);
       if (isTranslating) updated.add(segmentId);
       else updated.delete(segmentId);
-      return { translating: updated };
+      const partialTranslations = new Map(state.partialTranslations);
+      for (const [key, result] of partialTranslations) {
+        if (result.segment_id === segmentId) partialTranslations.delete(key);
+      }
+      return { translating: updated, partialTranslations };
     });
   },
   setBatchProgress: (progress) => set({ batchProgress: progress }),
-  clearTranslations: () => set({ translations: new Map(), translating: new Set() }),
+  clearTranslations: () => set({ translations: new Map(), partialTranslations: new Map(), translating: new Set() }),
 
   loadConfig: async () => {
     try {

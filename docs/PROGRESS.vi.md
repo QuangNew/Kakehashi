@@ -1,6 +1,6 @@
 # Tiến độ Kakehashi
 
-Cập nhật: **27/10/2026**. Đã thêm **API Pool**, lưu cấu hình/bản nháp, sửa cuộn chuột và thoát thiết lập nhanh, dùng lại model và chuẩn bị nền tùy chọn. Model giữ **Whisper Large v3 Turbo + Hy-MT2 7B Q4**. Kiểm thử: **292 frontend + 269 Rust**; EXE debug và GUI smoke đạt. Nạp model lần đầu **23,8 giây**, dùng lại **0,29–0,32 giây** (chỉ phần chuẩn bị model). Podcast 90 giây: 39/39 bản dịch, không bỏ audio/lỗi dịch; trễ trung vị/p95 **1.780/2.859 ms sau cuối đoạn**, CER Nhật giữ **13,87%**; chưa gồm gom đoạn tối đa 3 giây. Chi tiết ở [API Pool và khởi động](reports/api-pool-startup.vi.md), [báo cáo nâng model trước đó](reports/quality-upgrade.vi.md).
+Cập nhật: **05/11/2026**. Đã sửa timestamp transcript đứng ở `0:00.000`, thêm bản dịch Hy-MT2 hiện dần và giảm bộ nhớ của runtime dịch trên Windows. Giữ **Whisper Large v3 Turbo + Hy-MT2 7B Q4**, cấu hình GPU dịch 22 layers. **293 test frontend + 272 test Rust**, build EXE và GUI đạt; hai lượt mở mới giữ cửa sổ ổn định trong 30 giây. Đo lại podcast 90 giây: STT có 39 đoạn, không bỏ audio, CER Nhật **13,87%**; STT trung vị/p95 **913/1.131 ms sau cuối đoạn**. Dịch 7B vẫn tích hàng đợi trên máy/tải nền hiện tại, chưa đạt realtime liên tục. Đã gia cố khởi tạo cửa sổ và thêm log; lỗi tự đóng lần đầu chưa tái hiện được. Xem [báo cáo timestamp, realtime và khởi động](reports/realtime-startup-20261105.vi.md).
 
 | Hạng mục | Trạng thái |
 | --- | --- |
@@ -11,13 +11,18 @@ Cập nhật: **27/10/2026**. Đã thêm **API Pool**, lưu cấu hình/bản nh
 | API Pool | Lưu key một lần, chọn dùng chung hoặc riêng theo STT/dịch/copilot; nhập key cũ, trạng thái xanh/đỏ, prompt mở Pool khi thiếu |
 | Cấu hình | Ghi ngay/thử lại khi lỗi, bản nháp model/dịch giữ qua đổi tab và mở lại; áp dụng backend trước khi cập nhật trạng thái đang dùng |
 | Vào họp | Giữ trọng số Whisper và server dịch; làm nóng ngắn, chuẩn bị nền tùy chọn, giải phóng bộ nhớ thủ công |
-| Tối ưu realtime | Whisper Turbo/Vulkan chọn GPU rời, dùng chung trọng số giữa hai nguồn, chuẩn bị model trước capture, cap 3 giây, queue giới hạn và số đo trên UI |
+| Tối ưu realtime | Whisper Turbo/Vulkan dùng chung trọng số; Hy-MT2 hiện bản dịch dần, giảm áp lực RAM. STT theo kịp mẫu thử; dịch local 7B còn tích hàng đợi |
+| Timestamp / khởi động | Chuẩn hóa đồng hồ transcript và mốc cuộc họp; tạo webview sau backend, có log xoay vòng để chẩn đoán lần tự đóng |
 | Chế độ họp | Online/in-person; Meeting, Interview, Lecture, Webinar và Oral Exam |
 | Tài liệu và dữ liệu | Prompt trực tiếp/RAG local, lịch sử, ghi âm/playback; migration đường dẫn sao chép/kiểm tra trước khi cập nhật DB |
 | Thu gọn | Bỏ website/deploy, demo giả lập, updater/release upstream và Gemini Context Cache; dùng pnpm |
 | Noise Presets / Start on Login | Giữ UI/config gốc; backend xử lý nhiễu/khởi động Windows chưa nối hoàn chỉnh |
 
 Workspace và phụ thuộc local đã chuyển hoàn toàn sang Kakehashi; thư mục T_VNJP cũ đã xóa sau khi sao lưu và kiểm thử. Xem [báo cáo chuyển workspace](reports/workspace-migration.vi.md).
+
+## Mốc API Pool và model — 27/10/2026
+
+Đã thêm API Pool, lưu cấu hình/bản nháp, sửa cuộn chuột và thoát thiết lập nhanh, dùng lại model và chuẩn bị nền tùy chọn. Ở lần thử ngày 27/10, nạp model đầu tiên mất 23,8 giây, dùng lại 0,29–0,32 giây (chỉ phần chuẩn bị model); podcast đạt 39/39 bản dịch với độ trễ trung vị/p95 1.780/2.859 ms sau cuối đoạn. Đây là số đo lịch sử; lần đo ngày 05/11 có tải bộ nhớ và kết quả khác, không dùng mốc cũ để mô tả hiệu năng hiện tại. Chi tiết ở [API Pool và khởi động](reports/api-pool-startup.vi.md), [báo cáo nâng model](reports/quality-upgrade.vi.md).
 
 ## Sửa tải Distil Whisper — 27/10/2026
 

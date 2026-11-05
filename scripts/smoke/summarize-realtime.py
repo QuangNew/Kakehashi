@@ -62,6 +62,8 @@ def main():
             'finals': len(finals), 'translations': len(translations),
             'stt_after_audio_ms': stats([r.get('lag_ms') for r in finals]),
             'translation_after_audio_ms': stats([r.get('lag_ms') for r in translations]),
+            'translation_first_text_after_audio_ms': stats([r.get('first_text_after_audio_ms') for r in translations]),
+            'translation_first_token_ms': stats([r.get('first_token_ms') for r in translations]),
             'translation_inference_ms': stats([r['inference_ms'] for r in translations]),
             'translation_queue_ms': stats([r['queue_ms'] for r in translations]),
             'performance': final_perf,

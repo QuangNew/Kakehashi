@@ -14,6 +14,7 @@
     "windows": [
       {
         "label": "launcher",
+        "create": false,
         "title": "Kakehashi · Việt–Nhật",
         "width": 900,
         "height": 650,
@@ -26,6 +27,7 @@
       },
       {
         "label": "overlay",
+        "create": false,
         "title": "Kakehashi · Phụ đề",
         "width": 500,
         "height": 700,

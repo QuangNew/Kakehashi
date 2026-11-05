@@ -107,6 +107,14 @@ impl LiveTranslations {
         while session.history.len() > 12 { session.history.pop_front(); }
     }
 
+    pub fn publish_current(&self, ticket: &Ticket, publish: impl FnOnce()) -> bool {
+        let session = self.session.lock().unwrap();
+        let current = !ticket.cancel.is_cancelled() && session.id == ticket.session
+            && session.tickets.get(&ticket.key).is_some_and(|t| t.id == ticket.id);
+        if current { publish(); }
+        current
+    }
+
     pub fn finish(&self, ticket: &Ticket, commit: impl FnOnce()) -> bool {
         let mut session = self.session.lock().unwrap();
         let current = !ticket.cancel.is_cancelled()
@@ -190,8 +198,11 @@ mod tests {
             .reserve(&session, "meeting-1", "segment", "vi", "2".into())
             .unwrap();
         assert!(old.cancel.is_cancelled());
+        assert!(!jobs.publish_current(&old, || panic!("old preview emitted")));
+        assert!(jobs.publish_current(&new, || {}));
         assert!(!jobs.finish(&old, || panic!("old revision committed")));
         assert!(jobs.finish(&new, || {}));
+        assert!(!jobs.publish_current(&new, || panic!("preview emitted after completion")));
         let queued = jobs
             .reserve(&session, "meeting-1", "other", "ja", "3".into())
             .unwrap();
